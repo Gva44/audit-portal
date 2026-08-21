@@ -34,3 +34,21 @@ create index if not exists documents_fts_idx on documents
 -- for this project's small-scale (single-org) use, cosine distance matches Gemini embeddings.
 create index if not exists documents_embedding_idx on documents
   using ivfflat (embedding vector_cosine_ops) with (lists = 100);
+
+-- Individual questions parsed out of a 'questionnaire' document, each with an
+-- AI-generated answer drawn from policy/evidence documents via semantic search.
+create table if not exists questions (
+  id uuid primary key default gen_random_uuid(),
+  document_id uuid not null references documents(id) on delete cascade,
+  position int not null,
+  question_text text not null,
+  answer_text text,
+  -- Array of {"id": "<document uuid>", "filename": "..."} for the policy/evidence
+  -- docs the answer was drawn from.
+  citations jsonb not null default '[]'::jsonb,
+  answer_status text not null default 'pending' check (answer_status in ('pending', 'generating', 'ok', 'failed')),
+  answer_error text,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists questions_document_id_idx on questions (document_id);

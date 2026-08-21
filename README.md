@@ -3,11 +3,14 @@
 Internal document library for audit/compliance policies and evidence. Upload
 Word docs, PDFs, and images; text is extracted automatically (OCR/vision for
 images), stored alongside the original file, and embedded for keyword +
-semantic search — the foundation for AI-assisted questionnaire answers later.
+semantic search. Upload a questionnaire and the app parses it into individual
+questions and can generate AI answers citing the policy/evidence documents
+that support each one.
 
 **Stack:** Next.js (App Router) on Vercel, Neon Postgres + pgvector, Google
-Drive for file storage, Gemini for text extraction/OCR and embeddings,
-single-password gate for auth.
+Drive for file storage, Gemini for text extraction/OCR/embeddings and
+questionnaire answer generation (DeepSeek supported as a swap-in — see
+section 5), single-password gate for auth.
 
 ## 1. Prerequisites
 
@@ -85,19 +88,35 @@ sign in interactively.
    at https://ai.google.dev/gemini-api/docs/pricing if you expect heavy
    upload volume.
 
-## 5. Configure environment variables locally
+## 5. DeepSeek (optional, not currently used)
+
+Questionnaire question extraction and answer generation currently run on
+**Gemini** (reusing `GEMINI_API_KEY` above), not DeepSeek — DeepSeek's API
+has no free tier and requires a paid balance before it'll respond at all,
+so this app defaults to the provider that's already funded.
+
+If you'd rather use DeepSeek for answer generation (cheaper per call, and
+was the original plan), create a key at
+https://platform.deepseek.com/api_keys, add billing credit, put it in
+`.env.local` as `DEEPSEEK_API_KEY`, and swap the calls in
+[`src/lib/questions.ts`](src/lib/questions.ts) from `getGemini()` to
+`getDeepSeek()` (the client is already built in
+[`src/lib/deepseek.ts`](src/lib/deepseek.ts), just not wired up).
+
+## 6. Configure environment variables locally
 
 ```bash
 cp .env.example .env.local
 ```
 
-Fill in `DATABASE_URL`, the `GOOGLE_*` values, `GEMINI_API_KEY`, and:
+Fill in `DATABASE_URL`, the `GOOGLE_*` values, `GEMINI_API_KEY`,
+`DEEPSEEK_API_KEY`, and:
 
 - `APP_PASSWORD` — the password you'll type in to access the app
 - `APP_SECRET` — a random string used to sign the session cookie, e.g.
   generate one with `node -e "console.log(crypto.randomUUID() + crypto.randomUUID())"`
 
-## 6. Install dependencies and initialize the database schema
+## 7. Install dependencies and initialize the database schema
 
 ```bash
 npm install
@@ -108,7 +127,7 @@ npm run db:init
 (creates the `documents` table, pgvector extension, full-text and vector
 indexes). Safe to re-run — everything is `create if not exists`.
 
-## 7. Run locally
+## 8. Run locally
 
 ```bash
 npm run dev
@@ -116,20 +135,20 @@ npm run dev
 
 Open http://localhost:3000 — you'll land on the login page, then Library/Upload.
 
-## 8. Deploy to Vercel
+## 9. Deploy to Vercel
 
 1. Push this repo to GitHub:
    ```bash
    git remote add origin https://github.com/<your-username>/<repo-name>.git
-   git push -u origin master
+   git push -u origin main
    ```
 2. In Vercel, **Add New Project** → import the GitHub repo.
 3. Under **Environment Variables**, add all the same variables from
    `.env.local` (`DATABASE_URL`, `GOOGLE_SERVICE_ACCOUNT_KEY_BASE64`,
    `GOOGLE_DRIVE_FOLDER_ID`, `GOOGLE_DRIVE_OWNER_EMAIL`, `GEMINI_API_KEY`,
-   `APP_PASSWORD`, `APP_SECRET`).
+   `DEEPSEEK_API_KEY`, `APP_PASSWORD`, `APP_SECRET`).
 4. Deploy. Vercel will give you a public `*.vercel.app` URL — that's your
-   on-demand, browser-accessible app. Every push to `master` auto-deploys.
+   on-demand, browser-accessible app. Every push to `main` auto-deploys.
 
 Neon's free tier auto-suspends after inactivity and wakes on the next query
 (a few hundred ms of extra latency on the first request) — no manual
@@ -173,6 +192,15 @@ embedding dimensionality, update the `vector(768)` column in
 - **Search**: `/api/search` blends Postgres full-text search (`ts_rank`)
   with pgvector cosine similarity on the query's embedding, so both exact
   keyword matches and conceptually related documents surface.
+- **Questionnaire Q&A**: uploading a document tagged "Questionnaire" also
+  asks Gemini to split its extracted text into individual questions
+  (stored in the `questions` table). On the questionnaire's page
+  (`/questionnaires/[id]`), clicking "Generate" for a question embeds it,
+  retrieves the 5 most similar policy/evidence documents via pgvector, and
+  asks Gemini to answer using only those excerpts — citing which documents
+  it drew from. "Generate all" does this one question at a time from the
+  browser (not in one server request) so a large questionnaire can't time
+  out a single serverless function call. See [`src/lib/questions.ts`](src/lib/questions.ts).
 - **Auth**: a single shared password (`APP_PASSWORD`), gated by
   `src/proxy.ts` (Next.js middleware) checking a signed session cookie. No
   user accounts.
@@ -180,22 +208,27 @@ embedding dimensionality, update the `vector(768)` column in
 ## Project structure
 
 ```
-db/schema.sql              Postgres schema (pgvector, documents table, indexes)
+db/schema.sql              Postgres schema (pgvector, documents + questions tables, indexes)
 scripts/init-db.mjs        Applies db/schema.sql — run via `npm run db:init`
 src/lib/db.ts               Neon client
 src/lib/drive.ts            Google Drive upload/delete + owner-permission grant
 src/lib/gemini.ts           Gemini client
+src/lib/deepseek.ts         DeepSeek client (OpenAI-compatible, built but not wired up — see section 5)
 src/lib/extract.ts          Text extraction: docx (mammoth) / pdf & image (Gemini)
 src/lib/embeddings.ts       Gemini embedding generation
+src/lib/questions.ts        Question extraction + retrieval-augmented answer generation
 src/lib/auth.ts             Password check + signed session cookie helpers
 src/proxy.ts                Auth gate (redirects to /login when unauthenticated)
 src/app/upload/             Upload page
 src/app/library/            Library + search page
-src/app/api/                Route handlers (upload, documents, search, login)
+src/app/questionnaires/[id]/  Questionnaire Q&A page
+src/app/api/                Route handlers (upload, documents, questions, search, login)
 ```
 
 ## Out of scope for this phase
 
-Questionnaire upload/parsing, AI-generated answers, confidence scoring,
-contradiction detection, and multi-user accounts are intentionally not built
-yet — this phase is the document ingestion + search foundation for that work.
+Confidence scoring, contradiction detection, and multi-user accounts/roles
+are intentionally not built yet. Questionnaire answers are generated
+per-question on demand (not automatically re-generated when policies
+change) — if you update a policy, revisit affected questionnaire answers
+and click Regenerate.

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { uploadFile } from "@/lib/drive";
 import { extractDocumentText } from "@/lib/extract";
 import { generateEmbedding, toVectorLiteral } from "@/lib/embeddings";
+import { extractQuestions, saveExtractedQuestions } from "@/lib/questions";
 import { sql, type Category } from "@/lib/db";
 
 // Allow extra time for larger PDFs / Gemini OCR + embedding on Vercel.
@@ -79,6 +80,18 @@ export async function POST(request: NextRequest) {
     )
     returning id, filename, category, notes, mime_type, file_size, extraction_status, created_at
   `;
+  const document = rows[0];
 
-  return NextResponse.json({ document: rows[0] });
+  if (category === "questionnaire" && extractedText.trim()) {
+    try {
+      const questions = await extractQuestions(extractedText);
+      await saveExtractedQuestions(document.id, questions);
+    } catch (err) {
+      // The document itself is saved either way; questions can be extracted later
+      // from its detail page, so this isn't fatal to the upload.
+      console.error("Question extraction failed:", err);
+    }
+  }
+
+  return NextResponse.json({ document });
 }

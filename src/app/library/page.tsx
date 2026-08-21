@@ -1,6 +1,7 @@
 "use client";
 
 import { MouseEvent, useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import Nav from "@/components/Nav";
 import Highlighted from "@/components/Highlighted";
 import {
@@ -15,6 +16,7 @@ import {
   FileX2,
   LayoutGrid,
   Search,
+  Sparkles,
   Trash2,
 } from "lucide-react";
 
@@ -227,6 +229,16 @@ export default function LibraryPage() {
                   </div>
 
                   <div className="flex shrink-0 items-center gap-1">
+                    {doc.category === "questionnaire" && (
+                      <Link
+                        href={`/questionnaires/${doc.id}`}
+                        onClick={(e) => e.stopPropagation()}
+                        title="View questions & answers"
+                        className="rounded-lg p-2 text-muted transition-colors hover:bg-accent-soft hover:text-accent"
+                      >
+                        <Sparkles size={15} />
+                      </Link>
+                    )}
                     <a
                       href={`/api/documents/${doc.id}/file`}
                       target="_blank"
