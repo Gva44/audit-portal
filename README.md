@@ -52,27 +52,28 @@ sign in interactively.
    node -e "console.log(require('fs').readFileSync('path/to/your-key.json').toString('base64'))"
    ```
 
-6. **Create a Drive folder** for documents (in your normal Google Drive,
-   e.g. "Audit Portal Documents"). Open its URL — the folder ID is the long
-   string after `/folders/`:
-   `https://drive.google.com/drive/folders/<THIS_IS_THE_FOLDER_ID>`.
-   Put it in `.env.local` as `GOOGLE_DRIVE_FOLDER_ID`.
-7. **Share that folder** with the service account: right-click the folder →
-   **Share** → paste the service account's email (looks like
+6. **Create a Shared Drive** for documents (in Google Drive, click **Shared
+   drives** in the left sidebar → **+ New**, e.g. "Audit Portal"). This has
+   to be a **Shared Drive**, not a regular folder in "My Drive" — service
+   accounts have zero personal storage quota, so writes to a regular folder
+   fail with `storageQuotaExceeded` even if it's shared with them as
+   Editor. A Shared Drive's storage is billed to the Shared Drive itself,
+   which service accounts can write into. (Shared Drives need a Business
+   Standard/Plus or Enterprise Workspace plan — Business Starter doesn't
+   support them.)
+7. **Add the service account as a member** of the Shared Drive: open it →
+   **Manage members** → add the service account's email (looks like
    `audit-portal-drive@your-project.iam.gserviceaccount.com`, shown on the
-   service account's details page) → give it **Editor** access.
-8. Set `GOOGLE_DRIVE_OWNER_EMAIL` in `.env.local` to **your own** Google
-   Workspace email address.
-
-   **Why step 8 matters:** files the service account creates are only
-   visible to the service account itself, even though it's writing into a
-   folder you shared with it — folder-sharing grants the service account
-   *write* access, it doesn't make its files visible to *you*. The app
-   works around this by explicitly sharing each uploaded file with
-   `GOOGLE_DRIVE_OWNER_EMAIL` right after upload (see
-   [`src/lib/drive.ts`](src/lib/drive.ts)), so "Open file" in the Library
-   page actually opens for you. If you skip this variable, uploads still
-   work, but you won't be able to open the originals from your own account.
+   service account's details page) → role **Content Manager** (or higher).
+8. Open the Shared Drive and copy its ID from the URL — the string after
+   `/folders/`: `https://drive.google.com/drive/folders/<THIS_IS_THE_ID>`.
+   Put it in `.env.local` as `GOOGLE_DRIVE_FOLDER_ID`.
+9. Add yourself as a member of the Shared Drive too (same **Manage
+   members** dialog, your own email), and set `GOOGLE_DRIVE_OWNER_EMAIL` in
+   `.env.local` to that address. The app also explicitly shares each
+   uploaded file with this address as a safety net (see
+   [`src/lib/drive.ts`](src/lib/drive.ts)), but being a Shared Drive member
+   is what actually makes every file in it visible to you automatically.
 
 ## 4. Set up Gemini (extraction, OCR, embeddings)
 

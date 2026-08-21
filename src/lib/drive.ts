@@ -45,24 +45,29 @@ export async function uploadFile(
 ): Promise<DriveUploadResult> {
   const { drive, folderId } = getDrive();
 
+  // Service accounts have no personal storage quota on a regular "My Drive" folder —
+  // even one shared with them as Editor — so the folder must be a Shared Drive, whose
+  // storage is billed to the Shared Drive itself. supportsAllDrives is required for the
+  // API to operate on Shared Drive content at all.
   const res = await drive.files.create({
     requestBody: { name: filename, parents: [folderId] },
     media: { mimeType, body: Readable.from(buffer) },
     fields: "id, webViewLink",
+    supportsAllDrives: true,
   });
 
   const { id, webViewLink } = res.data;
   if (!id || !webViewLink) throw new Error("Drive did not return a file id/link for the upload");
 
-  // Files created by the service account live in its own Drive space and are only
-  // visible to the service account itself, even inside a folder shared *with* it —
-  // sharing a folder grants write access, not automatic visibility of files created there.
-  // Explicitly grant the human Workspace owner access so "Open file" actually works for them.
+  // Members of the Shared Drive can already see everything in it, but grant the human
+  // Workspace owner explicit per-file access too, as a safety net in case they aren't
+  // (yet) added as a member of the Shared Drive itself.
   const ownerEmail = process.env.GOOGLE_DRIVE_OWNER_EMAIL;
   if (ownerEmail) {
     await drive.permissions.create({
       fileId: id,
       sendNotificationEmail: false,
+      supportsAllDrives: true,
       requestBody: { role: "writer", type: "user", emailAddress: ownerEmail },
     });
   }
@@ -72,5 +77,9 @@ export async function uploadFile(
 
 export async function deleteFile(fileId: string): Promise<void> {
   const { drive } = getDrive();
-  await drive.files.delete({ fileId });
+  // Permanent delete (files.delete) requires the caller to own the file or be an
+  // organizer (Manager role) on the Shared Drive — the service account only has
+  // Content Manager access. Trashing needs only edit access and is recoverable,
+  // which is a reasonable default for a "delete" button anyway.
+  await drive.files.update({ fileId, supportsAllDrives: true, requestBody: { trashed: true } });
 }
