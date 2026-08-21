@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { LayoutGrid, LogOut, ShieldCheck, Upload } from "lucide-react";
 
 export default function Nav() {
   const pathname = usePathname();
@@ -14,26 +15,43 @@ export default function Nav() {
   }
 
   const linkClass = (href: string) =>
-    `rounded-md px-3 py-1.5 text-sm font-medium ${
-      pathname === href ? "bg-neutral-900 text-white" : "text-neutral-600 hover:bg-neutral-100"
+    `flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors ${
+      pathname === href
+        ? "bg-accent text-accent-foreground"
+        : "text-muted hover:bg-surface-hover hover:text-foreground"
     }`;
 
   return (
-    <nav className="flex items-center justify-between border-b border-neutral-200 bg-white px-6 py-3">
-      <div className="flex items-center gap-6">
-        <span className="text-sm font-semibold text-neutral-900">Audit Portal</span>
-        <div className="flex gap-1">
-          <Link href="/library" className={linkClass("/library")}>
-            Library
-          </Link>
-          <Link href="/upload" className={linkClass("/upload")}>
-            Upload
-          </Link>
+    <nav className="sticky top-0 z-10 border-b border-border bg-background/85 backdrop-blur-sm">
+      <div className="mx-auto flex max-w-4xl items-center justify-between px-6 py-3.5">
+        <div className="flex items-center gap-6">
+          <div className="flex items-center gap-2">
+            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-accent text-accent-foreground">
+              <ShieldCheck size={16} strokeWidth={2.25} />
+            </span>
+            <span className="text-[15px] font-semibold tracking-tight text-foreground">
+              Audit Portal
+            </span>
+          </div>
+          <div className="flex gap-1">
+            <Link href="/library" className={linkClass("/library")}>
+              <LayoutGrid size={15} />
+              Library
+            </Link>
+            <Link href="/upload" className={linkClass("/upload")}>
+              <Upload size={15} />
+              Upload
+            </Link>
+          </div>
         </div>
+        <button
+          onClick={handleLogout}
+          className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm text-muted transition-colors hover:bg-surface-hover hover:text-foreground"
+        >
+          <LogOut size={15} />
+          <span className="hidden sm:inline">Log out</span>
+        </button>
       </div>
-      <button onClick={handleLogout} className="text-sm text-neutral-500 hover:text-neutral-900">
-        Log out
-      </button>
     </nav>
   );
 }

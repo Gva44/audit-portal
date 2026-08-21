@@ -3,6 +3,20 @@
 import { MouseEvent, useCallback, useEffect, useState } from "react";
 import Nav from "@/components/Nav";
 import Highlighted from "@/components/Highlighted";
+import {
+  AlertTriangle,
+  ChevronDown,
+  ClipboardList,
+  ExternalLink,
+  FileCheck2,
+  FileImage,
+  FileSearch,
+  FileText,
+  FileX2,
+  LayoutGrid,
+  Search,
+  Trash2,
+} from "lucide-react";
 
 type DocSummary = {
   id: string;
@@ -21,11 +35,22 @@ type DocDetail = DocSummary & {
 };
 
 const CATEGORIES = [
-  { value: "", label: "All" },
-  { value: "policy", label: "Policy" },
-  { value: "evidence", label: "Evidence" },
-  { value: "questionnaire", label: "Questionnaire" },
+  { value: "", label: "All", icon: LayoutGrid },
+  { value: "policy", label: "Policy", icon: FileCheck2 },
+  { value: "evidence", label: "Evidence", icon: FileSearch },
+  { value: "questionnaire", label: "Questionnaire", icon: ClipboardList },
 ];
+
+const CATEGORY_ICON: Record<string, typeof FileCheck2> = {
+  policy: FileCheck2,
+  evidence: FileSearch,
+  questionnaire: ClipboardList,
+};
+
+function FileTypeIcon({ mimeType }: { mimeType: string }) {
+  if (mimeType.startsWith("image/")) return <FileImage size={17} />;
+  return <FileText size={17} />;
+}
 
 export default function LibraryPage() {
   const [category, setCategory] = useState("");
@@ -87,103 +112,170 @@ export default function LibraryPage() {
   }
 
   return (
-    <div className="min-h-screen bg-neutral-50">
+    <div className="min-h-screen bg-background">
       <Nav />
-      <main className="mx-auto max-w-4xl px-6 py-10">
-        <h1 className="mb-6 text-xl font-semibold text-neutral-900">Document library</h1>
+      <main className="mx-auto max-w-4xl px-6 py-12">
+        <h1 className="mb-1 text-2xl font-semibold tracking-tight text-foreground">
+          Document library
+        </h1>
+        <p className="mb-8 text-sm text-muted">
+          Browse, filter, and search policies, evidence, and questionnaires.
+        </p>
 
         <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex gap-1">
-            {CATEGORIES.map((c) => (
-              <button
-                key={c.value}
-                onClick={() => setCategory(c.value)}
-                className={`rounded-md px-3 py-1.5 text-sm font-medium ${
-                  category === c.value
-                    ? "bg-neutral-900 text-white"
-                    : "border border-neutral-300 bg-white text-neutral-600"
-                }`}
-              >
-                {c.label}
-              </button>
-            ))}
+          <div className="flex flex-wrap gap-1.5">
+            {CATEGORIES.map((c) => {
+              const Icon = c.icon;
+              const selected = category === c.value;
+              return (
+                <button
+                  key={c.value}
+                  onClick={() => setCategory(c.value)}
+                  className={`flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-sm font-medium transition-colors ${
+                    selected
+                      ? "border-accent bg-accent-soft text-accent"
+                      : "border-border bg-surface text-muted hover:bg-surface-hover"
+                  }`}
+                >
+                  <Icon size={14} />
+                  {c.label}
+                </button>
+              );
+            })}
           </div>
-          <input
-            type="text"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search keyword or meaning..."
-            className="w-full rounded-md border border-neutral-300 px-3 py-2 text-sm sm:w-72"
-          />
+          <div className="relative sm:w-72">
+            <Search
+              size={15}
+              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-2"
+            />
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search keyword or meaning..."
+              className="w-full rounded-full border border-border bg-surface py-2 pl-9 pr-3.5 text-sm text-foreground outline-none transition-colors placeholder:text-muted-2 focus:border-accent"
+            />
+          </div>
         </div>
 
-        {loading && <p className="text-sm text-neutral-400">Loading...</p>}
-        {!loading && documents.length === 0 && <p className="text-sm text-neutral-400">No documents found.</p>}
+        {loading && (
+          <div className="space-y-2">
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="h-[68px] animate-pulse rounded-xl border border-border bg-surface" />
+            ))}
+          </div>
+        )}
+
+        {!loading && documents.length === 0 && (
+          <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border py-16 text-center">
+            <span className="mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-surface-hover text-muted-2">
+              <FileX2 size={20} />
+            </span>
+            <p className="text-sm font-medium text-foreground">No documents found</p>
+            <p className="mt-1 text-sm text-muted">
+              {query || category ? "Try a different search or filter." : "Upload your first document to get started."}
+            </p>
+          </div>
+        )}
 
         <ul className="space-y-2">
-          {documents.map((doc) => (
-            <li key={doc.id} className="rounded-lg border border-neutral-200 bg-white">
-              <button
-                onClick={() => toggleExpand(doc.id)}
-                className="flex w-full items-start justify-between gap-4 px-4 py-3 text-left"
+          {documents.map((doc) => {
+            const CategoryIcon = CATEGORY_ICON[doc.category] ?? FileCheck2;
+            const expanded = expandedId === doc.id;
+            return (
+              <li
+                key={doc.id}
+                className="overflow-hidden rounded-xl border border-border bg-surface transition-colors hover:border-border-strong"
               >
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="truncate text-sm font-medium text-neutral-900">{doc.filename}</span>
-                    <span className="shrink-0 rounded-full bg-neutral-100 px-2 py-0.5 text-xs font-medium text-neutral-600">
-                      {doc.category}
-                    </span>
-                    {doc.extraction_status === "failed" && (
-                      <span className="shrink-0 rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-600">
-                        extraction failed
-                      </span>
-                    )}
-                  </div>
-                  {doc.notes && <p className="mt-1 truncate text-xs text-neutral-500">{doc.notes}</p>}
-                  {doc.snippet && (
-                    <p className="mt-1 text-xs text-neutral-500">
-                      <Highlighted text={doc.snippet} />
-                    </p>
-                  )}
-                  <p className="mt-1 text-xs text-neutral-400">{new Date(doc.created_at).toLocaleString()}</p>
-                </div>
-                <div className="flex shrink-0 items-center gap-3">
-                  <a
-                    href={`/api/documents/${doc.id}/file`}
-                    target="_blank"
-                    rel="noreferrer"
-                    onClick={(e) => e.stopPropagation()}
-                    className="text-xs font-medium text-neutral-600 underline"
-                  >
-                    Open file
-                  </a>
-                  <button onClick={(e) => handleDelete(doc.id, e)} className="text-xs font-medium text-red-500">
-                    Delete
-                  </button>
-                </div>
-              </button>
+                <div
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => toggleExpand(doc.id)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      toggleExpand(doc.id);
+                    }
+                  }}
+                  className="flex w-full cursor-pointer items-start gap-3 px-4 py-3.5 text-left"
+                >
+                  <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent-soft text-accent">
+                    <FileTypeIcon mimeType={doc.mime_type} />
+                  </span>
 
-              {expandedId === doc.id && (
-                <div className="border-t border-neutral-100 px-4 py-3">
-                  {expandedLoading && <p className="text-xs text-neutral-400">Loading extracted text...</p>}
-                  {!expandedLoading && expandedDoc?.extraction_status === "failed" && (
-                    <p className="text-xs text-red-500">Extraction failed: {expandedDoc.extraction_error}</p>
-                  )}
-                  {!expandedLoading && expandedDoc?.extracted_text && (
-                    <pre className="max-h-80 overflow-auto whitespace-pre-wrap text-xs text-neutral-700">
-                      {expandedDoc.extracted_text}
-                    </pre>
-                  )}
-                  {!expandedLoading &&
-                    expandedDoc &&
-                    !expandedDoc.extracted_text &&
-                    expandedDoc.extraction_status === "ok" && (
-                      <p className="text-xs text-neutral-400">No text extracted.</p>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="truncate text-sm font-medium text-foreground">{doc.filename}</span>
+                      <span className="flex shrink-0 items-center gap-1 rounded-full bg-surface-hover px-2 py-0.5 text-xs font-medium text-muted">
+                        <CategoryIcon size={11} />
+                        {doc.category}
+                      </span>
+                      {doc.extraction_status === "failed" && (
+                        <span className="flex shrink-0 items-center gap-1 rounded-full bg-danger-soft px-2 py-0.5 text-xs font-medium text-danger">
+                          <AlertTriangle size={11} />
+                          extraction failed
+                        </span>
+                      )}
+                    </div>
+                    {doc.notes && <p className="mt-1 truncate text-xs text-muted">{doc.notes}</p>}
+                    {doc.snippet && (
+                      <p className="mt-1 line-clamp-2 text-xs text-muted">
+                        <Highlighted text={doc.snippet} />
+                      </p>
                     )}
+                    <p className="mt-1 text-xs text-muted-2">{new Date(doc.created_at).toLocaleString()}</p>
+                  </div>
+
+                  <div className="flex shrink-0 items-center gap-1">
+                    <a
+                      href={`/api/documents/${doc.id}/file`}
+                      target="_blank"
+                      rel="noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      title="Open original file"
+                      className="rounded-lg p-2 text-muted transition-colors hover:bg-surface-hover hover:text-accent"
+                    >
+                      <ExternalLink size={15} />
+                    </a>
+                    <button
+                      onClick={(e) => handleDelete(doc.id, e)}
+                      title="Delete document"
+                      className="rounded-lg p-2 text-muted transition-colors hover:bg-danger-soft hover:text-danger"
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                    <ChevronDown
+                      size={16}
+                      className={`ml-1 text-muted-2 transition-transform ${expanded ? "rotate-180" : ""}`}
+                    />
+                  </div>
                 </div>
-              )}
-            </li>
-          ))}
+
+                {expanded && (
+                  <div className="border-t border-border bg-background/60 px-4 py-3.5">
+                    {expandedLoading && <p className="text-xs text-muted">Loading extracted text...</p>}
+                    {!expandedLoading && expandedDoc?.extraction_status === "failed" && (
+                      <p className="flex items-center gap-1.5 text-xs text-danger">
+                        <AlertTriangle size={13} />
+                        Extraction failed: {expandedDoc.extraction_error}
+                      </p>
+                    )}
+                    {!expandedLoading && expandedDoc?.extracted_text && (
+                      <pre className="max-h-80 overflow-auto whitespace-pre-wrap font-sans text-xs leading-relaxed text-foreground">
+                        {expandedDoc.extracted_text}
+                      </pre>
+                    )}
+                    {!expandedLoading &&
+                      expandedDoc &&
+                      !expandedDoc.extracted_text &&
+                      expandedDoc.extraction_status === "ok" && (
+                        <p className="text-xs text-muted">No text extracted.</p>
+                      )}
+                  </div>
+                )}
+              </li>
+            );
+          })}
         </ul>
       </main>
     </div>

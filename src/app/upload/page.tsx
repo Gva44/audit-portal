@@ -2,11 +2,22 @@
 
 import { DragEvent, useCallback, useState } from "react";
 import Nav from "@/components/Nav";
+import {
+  AlertCircle,
+  CheckCircle2,
+  ClipboardList,
+  FileCheck2,
+  FileSearch,
+  FileText,
+  Loader2,
+  UploadCloud,
+  X,
+} from "lucide-react";
 
 const CATEGORIES = [
-  { value: "policy", label: "Policy" },
-  { value: "evidence", label: "Evidence" },
-  { value: "questionnaire", label: "Questionnaire" },
+  { value: "policy", label: "Policy", icon: FileCheck2 },
+  { value: "evidence", label: "Evidence", icon: FileSearch },
+  { value: "questionnaire", label: "Questionnaire", icon: ClipboardList },
 ];
 
 type Status =
@@ -53,10 +64,15 @@ export default function UploadPage() {
   }
 
   return (
-    <div className="min-h-screen bg-neutral-50">
+    <div className="min-h-screen bg-background">
       <Nav />
-      <main className="mx-auto max-w-2xl px-6 py-10">
-        <h1 className="mb-6 text-xl font-semibold text-neutral-900">Upload document</h1>
+      <main className="mx-auto max-w-2xl px-6 py-12">
+        <h1 className="mb-1 text-2xl font-semibold tracking-tight text-foreground">
+          Upload document
+        </h1>
+        <p className="mb-8 text-sm text-muted">
+          Add a policy, evidence file, or questionnaire to the library.
+        </p>
 
         <div
           onDragOver={(e) => {
@@ -65,22 +81,32 @@ export default function UploadPage() {
           }}
           onDragLeave={() => setDragging(false)}
           onDrop={handleDrop}
-          className={`mb-6 flex flex-col items-center justify-center rounded-xl border-2 border-dashed px-6 py-12 text-center transition-colors ${
-            dragging ? "border-neutral-900 bg-neutral-100" : "border-neutral-300 bg-white"
+          className={`mb-6 flex flex-col items-center justify-center rounded-2xl border-2 border-dashed px-6 py-14 text-center transition-colors ${
+            dragging ? "border-accent bg-accent-soft" : "border-border bg-surface"
           }`}
         >
           {file ? (
-            <div>
-              <p className="text-sm font-medium text-neutral-900">{file.name}</p>
-              <p className="text-xs text-neutral-500">{(file.size / 1024).toFixed(1)} KB</p>
-              <button onClick={() => setFile(null)} className="mt-2 text-xs text-neutral-500 underline">
+            <div className="flex flex-col items-center">
+              <span className="mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-accent-soft text-accent">
+                <FileText size={20} />
+              </span>
+              <p className="max-w-xs truncate text-sm font-medium text-foreground">{file.name}</p>
+              <p className="text-xs text-muted">{(file.size / 1024).toFixed(1)} KB</p>
+              <button
+                onClick={() => setFile(null)}
+                className="mt-3 flex items-center gap-1 rounded-full border border-border px-2.5 py-1 text-xs font-medium text-muted transition-colors hover:bg-surface-hover hover:text-foreground"
+              >
+                <X size={12} />
                 Remove
               </button>
             </div>
           ) : (
             <>
-              <p className="mb-2 text-sm text-neutral-600">Drag and drop a file here, or</p>
-              <label className="cursor-pointer rounded-md bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white">
+              <span className="mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-accent-soft text-accent">
+                <UploadCloud size={20} />
+              </span>
+              <p className="mb-3 text-sm text-muted">Drag and drop a file here, or</p>
+              <label className="cursor-pointer rounded-full bg-accent px-4 py-2 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent-hover">
                 Browse files
                 <input
                   type="file"
@@ -89,33 +115,43 @@ export default function UploadPage() {
                   onChange={(e) => setFile(e.target.files?.[0] ?? null)}
                 />
               </label>
-              <p className="mt-2 text-xs text-neutral-400">.docx, .pdf, or images (max ~4MB)</p>
+              <p className="mt-3 text-xs text-muted-2">.docx, .pdf, or images (max ~4MB)</p>
             </>
           )}
         </div>
 
-        <div className="mb-4">
-          <label className="mb-1 block text-sm font-medium text-neutral-700">Category</label>
-          <select
-            value={category}
-            onChange={(e) => setCategory(e.target.value)}
-            className="w-full rounded-md border border-neutral-300 px-3 py-2 text-sm"
-          >
-            {CATEGORIES.map((c) => (
-              <option key={c.value} value={c.value}>
-                {c.label}
-              </option>
-            ))}
-          </select>
+        <div className="mb-5">
+          <label className="mb-2 block text-sm font-medium text-foreground">Category</label>
+          <div className="flex flex-wrap gap-2">
+            {CATEGORIES.map((c) => {
+              const Icon = c.icon;
+              const selected = category === c.value;
+              return (
+                <button
+                  key={c.value}
+                  type="button"
+                  onClick={() => setCategory(c.value)}
+                  className={`flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-sm font-medium transition-colors ${
+                    selected
+                      ? "border-accent bg-accent-soft text-accent"
+                      : "border-border bg-surface text-muted hover:bg-surface-hover"
+                  }`}
+                >
+                  <Icon size={14} />
+                  {c.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
-        <div className="mb-6">
-          <label className="mb-1 block text-sm font-medium text-neutral-700">Notes (optional)</label>
+        <div className="mb-7">
+          <label className="mb-2 block text-sm font-medium text-foreground">Notes (optional)</label>
           <textarea
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
             rows={3}
-            className="w-full rounded-md border border-neutral-300 px-3 py-2 text-sm"
+            className="w-full rounded-lg border border-border bg-surface px-3.5 py-2.5 text-sm text-foreground outline-none transition-colors placeholder:text-muted-2 focus:border-accent"
             placeholder="Any context for this document..."
           />
         </div>
@@ -123,15 +159,24 @@ export default function UploadPage() {
         <button
           onClick={handleUpload}
           disabled={!file || status.type === "uploading"}
-          className="w-full rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+          className="flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
         >
+          {status.type === "uploading" && <Loader2 size={16} className="animate-spin" />}
           {status.type === "uploading" ? "Uploading & processing..." : "Upload"}
         </button>
 
         {status.type === "success" && (
-          <p className="mt-4 text-sm text-green-600">Uploaded and processed &quot;{status.filename}&quot;.</p>
+          <p className="mt-4 flex items-center gap-2 text-sm text-success">
+            <CheckCircle2 size={16} />
+            Uploaded and processed &quot;{status.filename}&quot;.
+          </p>
         )}
-        {status.type === "error" && <p className="mt-4 text-sm text-red-600">{status.message}</p>}
+        {status.type === "error" && (
+          <p className="mt-4 flex items-center gap-2 text-sm text-danger">
+            <AlertCircle size={16} />
+            {status.message}
+          </p>
+        )}
       </main>
     </div>
   );

@@ -9,9 +9,9 @@ export default function Highlighted({ text }: { text: string }) {
     <>
       {parts.map((part, i) =>
         i % 2 === 1 ? (
-          <strong key={i} className="text-neutral-900">
+          <mark key={i} className="rounded-sm bg-accent-soft px-0.5 font-medium text-accent">
             {part}
-          </strong>
+          </mark>
         ) : (
           <span key={i}>{part}</span>
         )
