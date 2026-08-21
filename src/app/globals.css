@@ -3,24 +3,24 @@
 :root {
   color-scheme: light;
 
-  --background: #faf9f6;
+  --background: #f7f8fa;
   --surface: #ffffff;
-  --surface-hover: #f5f2ec;
-  --foreground: #23201b;
-  --muted: #7a7266;
-  --muted-2: #a39a8a;
-  --border: #e8e2d5;
-  --border-strong: #d9d0bd;
+  --surface-hover: #eef1f4;
+  --foreground: #14202e;
+  --muted: #5c6b7c;
+  --muted-2: #93a0ad;
+  --border: #e1e4e9;
+  --border-strong: #cdd3da;
 
-  --accent: #bd5d3a;
-  --accent-hover: #a54f30;
-  --accent-soft: #f3e2d6;
-  --accent-foreground: #fffaf6;
+  --accent: #1b3a5c;
+  --accent-hover: #142b45;
+  --accent-soft: #e1e8f0;
+  --accent-foreground: #ffffff;
 
-  --danger: #b3432e;
-  --danger-soft: #f6e2dd;
-  --success: #3f7d58;
-  --success-soft: #e2ede5;
+  --danger: #b3261e;
+  --danger-soft: #f7e3e1;
+  --success: #1f7a46;
+  --success-soft: #e1f0e7;
 }
 
 @theme inline {
