@@ -5,57 +5,84 @@ Word docs, PDFs, and images; text is extracted automatically (OCR/vision for
 images), stored alongside the original file, and embedded for keyword +
 semantic search — the foundation for AI-assisted questionnaire answers later.
 
-**Stack:** Next.js (App Router) on Vercel, Neon Postgres + pgvector, Cloudflare
-R2 for file storage, OpenAI for embeddings and image OCR, single-password gate
-for auth.
+**Stack:** Next.js (App Router) on Vercel, Neon Postgres + pgvector, Google
+Drive for file storage, Gemini for text extraction/OCR and embeddings,
+single-password gate for auth.
 
 ## 1. Prerequisites
 
-You'll need accounts (all have free tiers) for:
-
 - **Neon** — https://neon.tech (Postgres database)
-- **Cloudflare** — https://dash.cloudflare.com (R2 object storage)
-- **OpenAI** — https://platform.openai.com (embeddings + image OCR)
+- **Google Cloud** — https://console.cloud.google.com (service account for Drive access)
+- **Google AI Studio** — https://aistudio.google.com (Gemini API key)
 - **Vercel** — https://vercel.com (hosting)
 - A **GitHub** repo for this project (Vercel deploys from GitHub)
+- A Google Workspace account with Drive (you mentioned you already have this)
 
 ## 2. Set up Neon (database)
 
 1. Create a project at https://console.neon.tech.
 2. Open the project's **Connect** panel and copy the **pooled** connection
-   string (it contains `-pooler` in the hostname) — this is required for
-   serverless/Vercel use. It looks like:
-   `postgres://user:password@ep-xxxx-pooler.region.aws.neon.tech/neondb?sslmode=require`
-3. Put it in `.env.local` as `DATABASE_URL` (see step 5).
-4. pgvector is already enabled on Neon by default — the schema below just
-   turns it on with `create extension if not exists vector`.
+   string (it contains `-pooler` in the hostname) — required for
+   serverless/Vercel use. Put it in `.env.local` as `DATABASE_URL`.
+3. pgvector is enabled by the schema script itself (`create extension if not
+   exists vector`) — nothing to do manually in the console.
 
-You do **not** need to manually create tables in the console — the schema is
-applied by a script (step 6).
+## 3. Set up Google Drive storage (service account + folder)
 
-## 3. Set up Cloudflare R2 (file storage)
+This app writes files to Drive using a **service account** — a robot Google
+identity, not your personal login — so it can upload without you having to
+sign in interactively.
 
-1. In the Cloudflare dashboard, go to **R2 Object Storage** → **Create bucket**.
-   Name it e.g. `audit-portal-documents`. Location: Automatic.
-2. Go to **R2** → **Manage API tokens** → **Create API token**.
-   - Permissions: **Object Read & Write**
-   - Scope it to the bucket you just created (not account-wide, if offered).
-3. Copy the values it gives you into `.env.local`:
-   - `R2_ACCOUNT_ID` — shown on the R2 overview page (or in the token's endpoint URL)
-   - `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY` — shown once when the token is created, save them now
-   - `R2_BUCKET_NAME` — the bucket name from step 1
+1. **Create a Google Cloud project** (or reuse one) at
+   https://console.cloud.google.com/projectcreate.
+2. **Enable the Drive API**: in that project, go to **APIs & Services** →
+   **Library**, search "Google Drive API", click **Enable**.
+3. **Create a service account**: **APIs & Services** → **Credentials** →
+   **Create Credentials** → **Service account**. Give it any name (e.g.
+   `audit-portal-drive`). No roles/permissions needed at the project level —
+   access is granted later by sharing a specific folder.
+4. **Create a key for it**: open the service account → **Keys** tab →
+   **Add Key** → **Create new key** → JSON. This downloads a `.json` file —
+   keep it safe, it's a credential.
+5. **Base64-encode the whole JSON file** (so it fits as a single-line env
+   var) and copy the output into `.env.local` as
+   `GOOGLE_SERVICE_ACCOUNT_KEY_BASE64`:
 
-The app talks to R2 via the S3-compatible API (presigned URLs) — no public
-bucket access is needed; files stay private and are served through
-short-lived signed links.
+   ```bash
+   node -e "console.log(require('fs').readFileSync('path/to/your-key.json').toString('base64'))"
+   ```
 
-## 4. Set up OpenAI
+6. **Create a Drive folder** for documents (in your normal Google Drive,
+   e.g. "Audit Portal Documents"). Open its URL — the folder ID is the long
+   string after `/folders/`:
+   `https://drive.google.com/drive/folders/<THIS_IS_THE_FOLDER_ID>`.
+   Put it in `.env.local` as `GOOGLE_DRIVE_FOLDER_ID`.
+7. **Share that folder** with the service account: right-click the folder →
+   **Share** → paste the service account's email (looks like
+   `audit-portal-drive@your-project.iam.gserviceaccount.com`, shown on the
+   service account's details page) → give it **Editor** access.
+8. Set `GOOGLE_DRIVE_OWNER_EMAIL` in `.env.local` to **your own** Google
+   Workspace email address.
 
-1. Create an API key at https://platform.openai.com/api-keys.
-2. Put it in `.env.local` as `OPENAI_API_KEY`.
-3. Add a small amount of billing credit — this app uses
-   `text-embedding-3-small` (embeddings) and `gpt-4o-mini` (image OCR), both
-   inexpensive (fractions of a cent per document at this scale).
+   **Why step 8 matters:** files the service account creates are only
+   visible to the service account itself, even though it's writing into a
+   folder you shared with it — folder-sharing grants the service account
+   *write* access, it doesn't make its files visible to *you*. The app
+   works around this by explicitly sharing each uploaded file with
+   `GOOGLE_DRIVE_OWNER_EMAIL` right after upload (see
+   [`src/lib/drive.ts`](src/lib/drive.ts)), so "Open file" in the Library
+   page actually opens for you. If you skip this variable, uploads still
+   work, but you won't be able to open the originals from your own account.
+
+## 4. Set up Gemini (extraction, OCR, embeddings)
+
+1. Create an API key at https://aistudio.google.com/apikey (this can use
+   the same Google Cloud project as the service account, or a separate one
+   — either works).
+2. Put it in `.env.local` as `GEMINI_API_KEY`.
+3. Gemini's free tier covers light use; check current rate limits/pricing
+   at https://ai.google.dev/gemini-api/docs/pricing if you expect heavy
+   upload volume.
 
 ## 5. Configure environment variables locally
 
@@ -63,7 +90,7 @@ short-lived signed links.
 cp .env.example .env.local
 ```
 
-Fill in `DATABASE_URL`, the `R2_*` values, `OPENAI_API_KEY`, and:
+Fill in `DATABASE_URL`, the `GOOGLE_*` values, `GEMINI_API_KEY`, and:
 
 - `APP_PASSWORD` — the password you'll type in to access the app
 - `APP_SECRET` — a random string used to sign the session cookie, e.g.
@@ -78,7 +105,7 @@ npm run db:init
 
 `db:init` applies [`db/schema.sql`](db/schema.sql) to your Neon database
 (creates the `documents` table, pgvector extension, full-text and vector
-indexes). It's safe to re-run — everything is `create if not exists`.
+indexes). Safe to re-run — everything is `create if not exists`.
 
 ## 7. Run locally
 
@@ -93,59 +120,77 @@ Open http://localhost:3000 — you'll land on the login page, then Library/Uploa
 1. Push this repo to GitHub:
    ```bash
    git remote add origin https://github.com/<your-username>/<repo-name>.git
-   git push -u origin main
+   git push -u origin master
    ```
 2. In Vercel, **Add New Project** → import the GitHub repo.
 3. Under **Environment Variables**, add all the same variables from
-   `.env.local` (`DATABASE_URL`, `R2_ACCOUNT_ID`, `R2_BUCKET_NAME`,
-   `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `OPENAI_API_KEY`,
+   `.env.local` (`DATABASE_URL`, `GOOGLE_SERVICE_ACCOUNT_KEY_BASE64`,
+   `GOOGLE_DRIVE_FOLDER_ID`, `GOOGLE_DRIVE_OWNER_EMAIL`, `GEMINI_API_KEY`,
    `APP_PASSWORD`, `APP_SECRET`).
 4. Deploy. Vercel will give you a public `*.vercel.app` URL — that's your
-   on-demand, browser-accessible app. Every push to `main` auto-deploys.
+   on-demand, browser-accessible app. Every push to `master` auto-deploys.
 
 Neon's free tier auto-suspends after inactivity and wakes on the next query
 (a few hundred ms of extra latency on the first request) — no manual
 unpausing needed.
 
-### A note on upload size / time limits
+### A note on upload size limits
 
-Uploads go browser → R2 directly via a presigned URL (not through a Vercel
-function), so large files aren't limited by Vercel's request body size. Text
-extraction + embedding happens in a server function after upload
-(`/api/upload/finalize`), capped at 60s (`maxDuration`) — plenty for typical
-policy/evidence documents. If you start uploading very large PDFs and hit
-timeouts, that's the first place to look.
+Unlike S3-style storage, the Google Drive API doesn't have a simple
+presigned-URL pattern that lets the browser upload directly to storage — so
+uploads go browser → our server → Drive, and are bounded by **Vercel's
+serverless function request body limit (~4.5MB by default)**. That's plenty
+for typical policy PDFs, Word docs, and screenshots. If you need to upload
+larger files regularly, options include raising Vercel's limit on paid
+plans, or (bigger change) switching to Drive's resumable-upload API with a
+session URI the browser can PUT to directly — not implemented here since
+it adds real complexity and isn't needed at this app's typical document
+sizes.
+
+### A note on model names
+
+Google's Gemini model lineup moves fast. This app currently uses
+`gemini-flash-latest` (an alias that tracks Google's current best Flash
+model) for text/image extraction, and `gemini-embedding-001` for
+embeddings — both set in [`src/lib/extract.ts`](src/lib/extract.ts) and
+[`src/lib/embeddings.ts`](src/lib/embeddings.ts). If either starts
+returning errors, check https://ai.google.dev/gemini-api/docs/models for
+current model IDs and update those two constants. If you change the
+embedding dimensionality, update the `vector(768)` column in
+[`db/schema.sql`](db/schema.sql) to match.
 
 ## How it works
 
-- **Upload** (`/upload`): client requests a presigned R2 PUT URL, uploads the
-  file directly to R2, then calls `/api/upload/finalize` which downloads the
-  object server-side, extracts text (`mammoth` for .docx, `unpdf` for PDF,
-  GPT-4o-mini vision for images), generates an OpenAI embedding, and stores
-  everything in Neon.
-- **Library** (`/library`): lists documents from Neon, filterable by category,
-  with an expandable view of the extracted text and a link to the original
-  file (served via a short-lived presigned R2 URL).
-- **Search**: `/api/search` blends Postgres full-text search (`ts_rank`) with
-  pgvector cosine similarity on the query's embedding, so both exact keyword
-  matches and conceptually related documents surface.
-- **Auth**: a single shared password (`APP_PASSWORD`), gated by `src/proxy.ts`
-  (Next.js middleware) checking a signed session cookie. No user accounts.
+- **Upload** (`/upload`): client sends the file + category + notes as
+  `multipart/form-data` to `/api/upload`, which uploads the file to Drive
+  (via the service account), extracts text (`mammoth` for .docx, Gemini's
+  native document understanding for PDFs, Gemini vision for image OCR),
+  generates a Gemini embedding, and stores everything in Neon.
+- **Library** (`/library`): lists documents from Neon, filterable by
+  category, with an expandable view of the extracted text and a link to
+  the original file (opens directly in Google Drive).
+- **Search**: `/api/search` blends Postgres full-text search (`ts_rank`)
+  with pgvector cosine similarity on the query's embedding, so both exact
+  keyword matches and conceptually related documents surface.
+- **Auth**: a single shared password (`APP_PASSWORD`), gated by
+  `src/proxy.ts` (Next.js middleware) checking a signed session cookie. No
+  user accounts.
 
 ## Project structure
 
 ```
 db/schema.sql              Postgres schema (pgvector, documents table, indexes)
 scripts/init-db.mjs        Applies db/schema.sql — run via `npm run db:init`
-src/lib/db.ts              Neon client
-src/lib/r2.ts              R2 (S3-compatible) client + presigned URL helpers
-src/lib/extract.ts         Text extraction: docx / pdf / image OCR
-src/lib/embeddings.ts      OpenAI embedding generation
-src/lib/auth.ts            Password check + signed session cookie helpers
-src/proxy.ts               Auth gate (redirects to /login when unauthenticated)
-src/app/upload/            Upload page
-src/app/library/           Library + search page
-src/app/api/               Route handlers (presign, finalize, documents, search, login)
+src/lib/db.ts               Neon client
+src/lib/drive.ts            Google Drive upload/delete + owner-permission grant
+src/lib/gemini.ts           Gemini client
+src/lib/extract.ts          Text extraction: docx (mammoth) / pdf & image (Gemini)
+src/lib/embeddings.ts       Gemini embedding generation
+src/lib/auth.ts             Password check + signed session cookie helpers
+src/proxy.ts                Auth gate (redirects to /login when unauthenticated)
+src/app/upload/             Upload page
+src/app/library/            Library + search page
+src/app/api/                Route handlers (upload, documents, search, login)
 ```
 
 ## Out of scope for this phase

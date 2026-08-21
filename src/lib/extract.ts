@@ -1,43 +1,54 @@
 import mammoth from "mammoth";
-import { extractText as extractPdfText, getDocumentProxy } from "unpdf";
-import { getOpenAI } from "./openai";
+import { getGemini } from "./gemini";
 
 const DOCX_MIME =
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 const IMAGE_MIME_PREFIX = "image/";
+
+// Verify this is still current at https://ai.google.dev/gemini-api/docs/models.
+// gemini-flash-latest is an alias that tracks Google's current best Flash model.
+const GEMINI_MODEL = "gemini-flash-latest";
 
 async function extractFromDocx(buffer: Buffer): Promise<string> {
   const result = await mammoth.extractRawText({ buffer });
   return result.value.trim();
 }
 
+async function extractWithGemini(
+  buffer: Buffer,
+  mimeType: string,
+  instruction: string
+): Promise<string> {
+  // Gemini has native PDF/image document understanding (OCR, layout, tables) via inline
+  // base64 data. Inline requests are capped at ~20MB total; larger files would need the
+  // Files API instead (not implemented here — not needed at this app's document sizes).
+  const response = await getGemini().models.generateContent({
+    model: GEMINI_MODEL,
+    contents: [
+      { text: instruction },
+      { inlineData: { data: buffer.toString("base64"), mimeType } },
+    ],
+  });
+  return (response.text ?? "").trim();
+}
+
 async function extractFromPdf(buffer: Buffer): Promise<string> {
-  const pdf = await getDocumentProxy(new Uint8Array(buffer));
-  const { text } = await extractPdfText(pdf, { mergePages: true });
-  return text.trim();
+  return extractWithGemini(
+    buffer,
+    "application/pdf",
+    "Extract all text content from this document verbatim, preserving reading order and " +
+      "structure (headings, lists, tables). Output only the extracted text, no commentary."
+  );
 }
 
 async function extractFromImage(buffer: Buffer, mimeType: string): Promise<string> {
-  const base64 = buffer.toString("base64");
-  const response = await getOpenAI().chat.completions.create({
-    model: "gpt-4o-mini",
-    messages: [
-      {
-        role: "user",
-        content: [
-          {
-            type: "text",
-            text:
-              "Transcribe all visible text from this image exactly as it appears, preserving structure (labels, table rows, form fields). " +
-              "If it's a screenshot of a UI or document, include field labels and their values. Output only the transcribed text, no commentary.",
-          },
-          { type: "image_url", image_url: { url: `data:${mimeType};base64,${base64}` } },
-        ],
-      },
-    ],
-    max_tokens: 4096,
-  });
-  return response.choices[0]?.message?.content?.trim() ?? "";
+  return extractWithGemini(
+    buffer,
+    mimeType,
+    "Transcribe all visible text from this image exactly as it appears, preserving structure " +
+      "(labels, table rows, form fields). If it's a screenshot of a UI or document, include " +
+      "field labels and their values. Output only the transcribed text, no commentary."
+  );
 }
 
 export async function extractDocumentText(

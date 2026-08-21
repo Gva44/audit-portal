@@ -11,7 +11,7 @@ const CATEGORIES = [
 
 type Status =
   | { type: "idle" }
-  | { type: "uploading"; step: string }
+  | { type: "uploading" }
   | { type: "success"; filename: string }
   | { type: "error"; message: string };
 
@@ -31,43 +31,17 @@ export default function UploadPage() {
 
   async function handleUpload() {
     if (!file) return;
-    setStatus({ type: "uploading", step: "Requesting upload URL..." });
+    setStatus({ type: "uploading" });
     try {
-      const presignRes = await fetch("/api/upload/presign", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ filename: file.name, mimeType: file.type }),
-      });
-      if (!presignRes.ok) {
-        const body = await presignRes.json().catch(() => ({}));
-        throw new Error(body.error || "Failed to get upload URL");
-      }
-      const { key, uploadUrl } = await presignRes.json();
+      const form = new FormData();
+      form.set("file", file);
+      form.set("category", category);
+      if (notes) form.set("notes", notes);
 
-      setStatus({ type: "uploading", step: "Uploading file..." });
-      const putRes = await fetch(uploadUrl, {
-        method: "PUT",
-        headers: { "Content-Type": file.type },
-        body: file,
-      });
-      if (!putRes.ok) throw new Error("Failed to upload file to storage");
-
-      setStatus({ type: "uploading", step: "Extracting text and generating embeddings..." });
-      const finalizeRes = await fetch("/api/upload/finalize", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          key,
-          filename: file.name,
-          mimeType: file.type,
-          fileSize: file.size,
-          category,
-          notes: notes || null,
-        }),
-      });
-      if (!finalizeRes.ok) {
-        const body = await finalizeRes.json().catch(() => ({}));
-        throw new Error(body.error || "Failed to process document");
+      const res = await fetch("/api/upload", { method: "POST", body: form });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || "Failed to upload document");
       }
 
       setStatus({ type: "success", filename: file.name });
@@ -115,7 +89,7 @@ export default function UploadPage() {
                   onChange={(e) => setFile(e.target.files?.[0] ?? null)}
                 />
               </label>
-              <p className="mt-2 text-xs text-neutral-400">.docx, .pdf, or images</p>
+              <p className="mt-2 text-xs text-neutral-400">.docx, .pdf, or images (max ~4MB)</p>
             </>
           )}
         </div>
@@ -151,7 +125,7 @@ export default function UploadPage() {
           disabled={!file || status.type === "uploading"}
           className="w-full rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
         >
-          {status.type === "uploading" ? status.step : "Upload"}
+          {status.type === "uploading" ? "Uploading & processing..." : "Upload"}
         </button>
 
         {status.type === "success" && (
