@@ -23,8 +23,12 @@ export async function POST(_request: NextRequest, { params }: { params: Promise<
     return NextResponse.json({ error: "No extracted text available for this document" }, { status: 400 });
   }
 
-  const questions = await extractQuestions(extractedText);
-  await saveExtractedQuestions(id, questions);
-
-  return NextResponse.json({ count: questions.length });
+  try {
+    const questions = await extractQuestions(extractedText);
+    await saveExtractedQuestions(id, questions);
+    return NextResponse.json({ count: questions.length });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown error extracting questions";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
 }

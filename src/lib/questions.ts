@@ -27,21 +27,23 @@ export async function extractQuestions(text: string): Promise<string[]> {
   const input = text.slice(0, MAX_QUESTIONNAIRE_INPUT_CHARS).trim();
   if (!input) return [];
 
-  let parsed: { questions?: unknown };
-  try {
-    parsed = await generateJson<{ questions?: unknown }>(
-      "You extract individual questions from an audit/compliance questionnaire document. " +
-        "Identify each distinct question a respondent needs to answer, in the order they appear. " +
-        "Ignore section headers, instructions, and non-question text. " +
-        'Respond with JSON: {"questions": string[]}. If no questions are found, return {"questions": []}.',
-      input
-    );
-  } catch {
-    return [];
-  }
+  const parsed = await generateJson<{ questions?: unknown }>(
+    "You extract individual questions from an audit/compliance questionnaire document. " +
+      "Identify each distinct question or requirement a respondent needs to address, in the order " +
+      "they appear. Questionnaires are often laid out as tables (e.g. columns for the question, " +
+      "required evidence, and a yes/no/na response) that get flattened into plain text — treat each " +
+      "numbered row's core question/statement as one item even if checkbox sub-items, evidence " +
+      "requirements, or answer-column labels are interleaved with it; do not split one row into " +
+      "multiple items and do not include the surrounding column headers or notes as items themselves. " +
+      "Ignore section headers, instructions, and non-question text. " +
+      'Respond with JSON: {"questions": string[]}. If no questions are found, return {"questions": []}.',
+    input
+  );
 
   const questions = parsed?.questions;
-  if (!Array.isArray(questions)) return [];
+  if (!Array.isArray(questions)) {
+    throw new Error("Model response did not include a valid questions array");
+  }
   return questions.filter((q): q is string => typeof q === "string" && q.trim().length > 0);
 }
 
