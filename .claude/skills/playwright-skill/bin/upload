@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [ $# -lt 2 ]; then
+  echo "Usage: upload <selector> <file>" >&2
+  exit 1
+fi
+
+# shellcheck source=_resolve-session
+source "$(dirname "$0")/_resolve-session"
+
+# JSON.stringify produces a safely-quoted JS string literal (handles ', ", \, newlines, etc.)
+SELECTOR_JS=$(node -e "process.stdout.write(JSON.stringify(process.argv[1]))" -- "$1")
+FILE_JS=$(node -e "process.stdout.write(JSON.stringify(process.argv[1]))" -- "$2")
+playwright-cli $_SESSION_FLAG run-code "async page => { await page.locator($SELECTOR_JS).setInputFiles($FILE_JS); }"

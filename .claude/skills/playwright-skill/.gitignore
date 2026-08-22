@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# playwright-cli snapshot files (regenerated per session)
+.playwright-cli/
+
+# playwright-cli browser config — environment-specific
+.playwright/
+
+# Playwright skill runtime data — never commit (session tokens, cache, screenshots)
+.playwright-skill/auth/
+.playwright-skill/cache/
+.playwright-skill/sessions/
+
+# Secrets (passwords, API keys) - never commit
+skill/.secrets.json
+.secrets.json
+**/secrets.json
+
+# Project-specific configuration (created on init) - never commit
+skill/worktrees.json
+worktrees.json
+
+# Test coverage
+coverage/

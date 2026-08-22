@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# shellcheck source=_resolve-session
+source "$(dirname "$0")/_resolve-session"
+
+if [ -z "$_SESSION" ]; then
+  echo "playwright-skill: no active session" >&2
+  exit 0
+fi
+
+# Close gracefully; continue even if already closed
+playwright-cli "-s=$_SESSION" close 2>/dev/null || true
+
+rm -f "$_SESSION_FILE"
+
+echo "playwright-skill: session '$_SESSION' closed" >&2

@@ -1,0 +1,43 @@
+{
+  "description": "Copy this file to worktrees.json and customize for your project.",
+
+  "worktrees": {
+    "my-app": {
+      "baseUrl": "https://my-app.test",
+      "branch": "develop",
+      "description": "Main development worktree",
+      "auth": {
+        "defaultUser": "admin@example.com",
+        "roles": {
+          "admin": "admin@example.com",
+          "user": "user@example.com",
+          "readonly": "readonly@example.com"
+        },
+        "notes": "Use bin/auth-load to restore saved sessions"
+      },
+      "authProfiles": ["admin", "user", "readonly"],
+      "notes": [
+        "Add known quirks or framework-specific patterns here",
+        "e.g. Modals use [data-modal-confirm] for confirm buttons"
+      ]
+    },
+    "my-app-staging": {
+      "baseUrl": "https://staging.my-app.com",
+      "branch": "main",
+      "description": "Staging / production-parallel environment",
+      "auth": {
+        "defaultUser": "admin@example.com",
+        "roles": {
+          "admin": "admin@example.com"
+        }
+      },
+      "authProfiles": ["staging-admin"]
+    }
+  },
+
+  "detection": {
+    "method": "directory-name",
+    "fallback": "my-app",
+    "notes": "Worktree is detected from the last component of your working directory path"
+  }
+}

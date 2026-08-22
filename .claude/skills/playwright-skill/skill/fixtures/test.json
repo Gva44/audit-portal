@@ -1,0 +1,7 @@
+{
+  "name": "test-data",
+  "description": "Test JSON file for Playwright Skill",
+  "version": "1.0.0",
+  "created": "2025-12-21",
+  "purpose": "File upload testing"
+}

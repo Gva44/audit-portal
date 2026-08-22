@@ -1,0 +1,93 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SKILL_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+
+# Parse --session <name> / --session=<name> from args; pass everything else through
+SESSION_NAME=""
+PASSTHROUGH_ARGS=()
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --session)
+      SESSION_NAME="$2"
+      shift 2
+      ;;
+    --session=*)
+      SESSION_NAME="${1#--session=}"
+      shift
+      ;;
+    *)
+      PASSTHROUGH_ARGS+=("$1")
+      shift
+      ;;
+  esac
+done
+
+# Derive from current directory name if not specified,
+# falling back to worktrees.json detection.fallback so the session name is
+# stable even when called from different directories.
+if [ -z "$SESSION_NAME" ]; then
+  DIR_NAME="$(basename "$PWD")"
+  WORKTREES_JSON="$SKILL_DIR/skill/worktrees.json"
+  # Check if the directory name matches a known worktree key
+  if [ -f "$WORKTREES_JSON" ] && command -v python3 &>/dev/null; then
+    # Pass variables as arguments (not string interpolation) to prevent code injection
+    MATCHED=$(python3 -c "
+import json, sys
+worktrees_json, dir_name = sys.argv[1], sys.argv[2]
+data = json.load(open(worktrees_json))
+worktrees = data.get('worktrees', {})
+if dir_name in worktrees:
+    print(dir_name)
+else:
+    print(data.get('detection', {}).get('fallback', dir_name))
+" "$WORKTREES_JSON" "$DIR_NAME" 2>/dev/null || echo "$DIR_NAME")
+    SESSION_NAME="$MATCHED"
+  else
+    SESSION_NAME="$DIR_NAME"
+  fi
+fi
+
+# Sanitize: keep only alphanumeric, dash, underscore
+SESSION_NAME="$(echo "$SESSION_NAME" | tr -cs 'a-zA-Z0-9_-' '-' | sed 's/^-//;s/-$//')"
+
+if [ -z "$SESSION_NAME" ]; then
+  SESSION_NAME="default"
+fi
+
+# ---------------------------------------------------------------------------
+# Session isolation: when CLAUDE_SESSION_ID is set, each agent gets its own
+# session name and session file so parallel agents don't interfere.
+# ---------------------------------------------------------------------------
+if [ -n "${CLAUDE_SESSION_ID:-}" ]; then
+  # Sanitize: strip path separators and keep only safe characters (defense in depth)
+  SAFE_SESSION_ID="$(echo "$CLAUDE_SESSION_ID" | tr -cd 'a-zA-Z0-9_-')"
+  if [ -n "$SAFE_SESSION_ID" ]; then
+    SHORT_ID="${SAFE_SESSION_ID:0:8}"
+    SESSION_NAME="${SESSION_NAME}-${SHORT_ID}"
+    SESSION_FILE="$SKILL_DIR/.playwright-skill/sessions/${SAFE_SESSION_ID}"
+    mkdir -p "$SKILL_DIR/.playwright-skill/sessions"
+  else
+    echo "playwright-skill: WARNING: CLAUDE_SESSION_ID contains no safe characters, ignoring" >&2
+    SESSION_FILE="$SKILL_DIR/.playwright-skill/session"
+  fi
+else
+  SESSION_FILE="$SKILL_DIR/.playwright-skill/session"
+fi
+
+# Close any existing session FOR THIS AGENT to prevent orphaned Chrome processes
+if [ -f "$SESSION_FILE" ] && [ -s "$SESSION_FILE" ]; then
+  EXISTING_SESSION="$(cat "$SESSION_FILE")"
+  echo "playwright-skill: closing existing session '$EXISTING_SESSION'" >&2
+  playwright-cli "-s=$EXISTING_SESSION" close 2>/dev/null || true
+  rm -f "$SESSION_FILE"
+fi
+
+# Write session name so all other bin scripts can read it
+mkdir -p "$(dirname "$SESSION_FILE")"
+echo -n "$SESSION_NAME" > "$SESSION_FILE"
+
+echo "playwright-skill: starting session '$SESSION_NAME'" >&2
+
+exec playwright-cli "-s=$SESSION_NAME" open "${PASSTHROUGH_ARGS[@]+"${PASSTHROUGH_ARGS[@]}"}"

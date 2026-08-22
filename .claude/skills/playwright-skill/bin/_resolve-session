@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# Sourced by bin/* scripts to resolve the active playwright-cli session.
+#
+# Sets:
+#   _SKILL_DIR     — absolute path to the skill root
+#   _SESSION_FILE  — path to the session name file for this agent
+#   _SESSION       — session name string (empty if no session open)
+#   _SESSION_FLAG  — "-s=<name>" flag for playwright-cli (empty if no session)
+#
+# When CLAUDE_SESSION_ID is set (normal Claude Code usage), each agent gets
+# its own session file at .playwright-skill/sessions/{CLAUDE_SESSION_ID}.
+# When unset (manual/testing), falls back to the legacy .playwright-skill/session file.
+
+_SKILL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+if [ -n "${CLAUDE_SESSION_ID:-}" ]; then
+  # Sanitize: strip path separators and keep only safe characters (defense in depth)
+  _SAFE_SESSION_ID="$(echo "$CLAUDE_SESSION_ID" | tr -cd 'a-zA-Z0-9_-')"
+  if [ -z "$_SAFE_SESSION_ID" ]; then
+    echo "playwright-skill: WARNING: CLAUDE_SESSION_ID contains no safe characters, falling back to legacy session" >&2
+    _SESSION_FILE="$_SKILL_DIR/.playwright-skill/session"
+  else
+    _SESSION_FILE="$_SKILL_DIR/.playwright-skill/sessions/${_SAFE_SESSION_ID}"
+  fi
+else
+  _SESSION_FILE="$_SKILL_DIR/.playwright-skill/session"
+fi
+
+_SESSION="$(cat "$_SESSION_FILE" 2>/dev/null || true)"
+_SESSION_FLAG="${_SESSION:+-s=$_SESSION}"

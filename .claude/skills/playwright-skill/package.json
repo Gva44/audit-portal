@@ -1,0 +1,32 @@
+{
+  "name": "playwright-skill",
+  "version": "2.0.0",
+  "description": "Claude Code skill for browser automation with @playwright/cli",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "clean": "rm -rf dist"
+  },
+  "keywords": [
+    "playwright",
+    "claude-code",
+    "skill",
+    "browser-automation"
+  ],
+  "author": "",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "typescript": "^5.3.0",
+    "vitest": "^1.1.0"
+  }
+}
