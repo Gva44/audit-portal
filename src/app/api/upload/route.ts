@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { uploadFile } from "@/lib/drive";
-import { extractDocumentText } from "@/lib/extract";
+import { extractDocumentText, XLSX_MIME } from "@/lib/extract";
 import { generateEmbedding, toVectorLiteral } from "@/lib/embeddings";
-import { extractQuestions, saveExtractedQuestions } from "@/lib/questions";
+import { parseAndSaveQuestions } from "@/lib/questions";
 import { sql, type Category } from "@/lib/db";
 
 // Allow extra time for larger PDFs / Gemini OCR + embedding on Vercel.
@@ -13,6 +13,7 @@ export const maxDuration = 60;
 
 const ALLOWED_MIME_TYPES = new Set([
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document", // .docx
+  XLSX_MIME, // .xlsx
   "application/pdf",
   "image/png",
   "image/jpeg",
@@ -38,7 +39,7 @@ export async function POST(request: NextRequest) {
   }
   if (!ALLOWED_MIME_TYPES.has(file.type)) {
     return NextResponse.json(
-      { error: `Unsupported file type: ${file.type}. Allowed: .docx, .pdf, .png, .jpg, .webp, .gif` },
+      { error: `Unsupported file type: ${file.type}. Allowed: .docx, .xlsx, .pdf, .png, .jpg, .webp, .gif` },
       { status: 400 }
     );
   }
@@ -82,10 +83,9 @@ export async function POST(request: NextRequest) {
   `;
   const document = rows[0];
 
-  if (category === "questionnaire" && extractedText.trim()) {
+  if (category === "questionnaire") {
     try {
-      const questions = await extractQuestions(extractedText);
-      await saveExtractedQuestions(document.id, questions);
+      await parseAndSaveQuestions(document.id, buffer, file.type, extractedText);
     } catch (err) {
       // The document itself is saved either way; questions can be extracted later
       // from its detail page, so this isn't fatal to the upload.

@@ -7,12 +7,15 @@ export const maxDuration = 30;
 export async function POST(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
 
-  const existing = await sql`select question_text from questions where id = ${id}`;
+  const existing = await sql`select question_text, row_data from questions where id = ${id}`;
   const question = existing[0];
   if (!question) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   try {
-    const { answer, citations } = await generateAnswer(question.question_text as string);
+    const { answer, citations } = await generateAnswer(
+      question.question_text as string,
+      question.row_data as Record<string, string> | null
+    );
     const rows = await sql`
       update questions
       set answer_text = ${answer}, citations = ${JSON.stringify(citations)}::jsonb,

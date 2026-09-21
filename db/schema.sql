@@ -35,6 +35,11 @@ create index if not exists documents_fts_idx on documents
 create index if not exists documents_embedding_idx on documents
   using ivfflat (embedding vector_cosine_ops) with (lists = 100);
 
+-- Original column headers, in order, for a questionnaire parsed from a structured
+-- Excel/Word table (via src/lib/questionnaire-table.ts) — lets export rebuild the
+-- client's original layout. Null for questionnaires parsed as plain text (e.g. PDFs).
+alter table documents add column if not exists column_headers jsonb;
+
 -- Individual questions parsed out of a 'questionnaire' document, each with an
 -- AI-generated answer drawn from policy/evidence documents via semantic search.
 create table if not exists questions (
@@ -50,5 +55,10 @@ create table if not exists questions (
   answer_error text,
   created_at timestamptz not null default now()
 );
+
+-- The original row's cell values, keyed by header (e.g. {"Documents Needed": "...",
+-- "Yes/No/NA": "..."}), for questions parsed from a structured table. Null for
+-- plain-text-parsed questions.
+alter table questions add column if not exists row_data jsonb;
 
 create index if not exists questions_document_id_idx on questions (document_id);

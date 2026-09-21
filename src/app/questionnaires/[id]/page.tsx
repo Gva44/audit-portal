@@ -7,6 +7,7 @@ import {
   AlertTriangle,
   ArrowLeft,
   CheckCircle2,
+  Download,
   ExternalLink,
   FileSearch,
   FileText,
@@ -21,12 +22,24 @@ type Question = {
   document_id: string;
   position: number;
   question_text: string;
+  row_data: Record<string, string> | null;
   answer_text: string | null;
   citations: Citation[];
   answer_status: "pending" | "generating" | "ok" | "failed";
   answer_error: string | null;
   created_at: string;
 };
+
+// Mirrors the heuristic in src/lib/questions.ts's findExpectedEvidence, for display only.
+const EVIDENCE_HEADER_PATTERN = /evidence|document.*need|information.*need|required/i;
+
+function findExpectedEvidence(rowData: Record<string, string> | null): string | null {
+  if (!rowData) return null;
+  for (const [header, value] of Object.entries(rowData)) {
+    if (EVIDENCE_HEADER_PATTERN.test(header) && value.trim()) return value.trim();
+  }
+  return null;
+}
 
 type DocInfo = { id: string; filename: string };
 
@@ -130,14 +143,23 @@ export default function QuestionnairePage({ params }: { params: Promise<{ id: st
                   {answeredCount} of {questions.length} questions answered
                 </p>
               </div>
-              <button
-                onClick={generateAll}
-                disabled={generatingAll || questions.every((q) => q.answer_status === "ok")}
-                className="flex shrink-0 items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {generatingAll ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
-                {generatingAll ? "Generating..." : "Generate all answers"}
-              </button>
+              <div className="flex shrink-0 gap-2">
+                <a
+                  href={`/api/documents/${id}/export`}
+                  className="flex items-center justify-center gap-2 rounded-lg border border-border bg-surface px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-surface-hover"
+                >
+                  <Download size={16} />
+                  Export to Excel
+                </a>
+                <button
+                  onClick={generateAll}
+                  disabled={generatingAll || questions.length === 0 || questions.every((q) => q.answer_status === "ok")}
+                  className="flex items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {generatingAll ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
+                  {generatingAll ? "Generating..." : "Generate all answers"}
+                </button>
+              </div>
             </div>
 
             {questions.length === 0 && (
@@ -161,12 +183,20 @@ export default function QuestionnairePage({ params }: { params: Promise<{ id: st
             <ul className="space-y-3">
               {questions.map((q) => {
                 const isGenerating = generatingIds.has(q.id);
+                const expectedEvidence = findExpectedEvidence(q.row_data);
                 return (
                   <li key={q.id} className="rounded-xl border border-border bg-surface p-4">
                     <div className="mb-2 flex items-start justify-between gap-3">
-                      <p className="text-sm font-medium text-foreground">
-                        <span className="text-muted-2">{q.position + 1}.</span> {q.question_text}
-                      </p>
+                      <div>
+                        <p className="whitespace-pre-line text-sm font-medium text-foreground">
+                          <span className="text-muted-2">{q.position + 1}.</span> {q.question_text}
+                        </p>
+                        {expectedEvidence && (
+                          <p className="mt-1 text-xs text-muted">
+                            <span className="font-medium">Evidence expected:</span> {expectedEvidence}
+                          </p>
+                        )}
+                      </div>
                       <button
                         onClick={() => generateOne(q.id)}
                         disabled={isGenerating || generatingAll}

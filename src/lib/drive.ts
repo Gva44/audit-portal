@@ -75,6 +75,15 @@ export async function uploadFile(
   return { id, webViewLink };
 }
 
+export async function getFileBuffer(fileId: string): Promise<Buffer> {
+  const { drive } = getDrive();
+  const res = await drive.files.get(
+    { fileId, alt: "media", supportsAllDrives: true },
+    { responseType: "arraybuffer" }
+  );
+  return Buffer.from(res.data as ArrayBuffer);
+}
+
 export async function deleteFile(fileId: string): Promise<void> {
   const { drive } = getDrive();
   // Permanent delete (files.delete) requires the caller to own the file or be an

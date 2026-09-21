@@ -1,6 +1,10 @@
 import { sql } from "./db";
 import { generateEmbedding, toVectorLiteral } from "./embeddings";
 import { getGemini } from "./gemini";
+import { parseDocxTable, parseXlsxTable, toQuestionRows } from "./questionnaire-table";
+import { XLSX_MIME } from "./extract";
+
+const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
 // Question extraction and answer generation both use Gemini (already funded/working in
 // this app). DeepSeek was the original plan for this step and is a fine swap later —
@@ -58,13 +62,77 @@ export async function saveExtractedQuestions(documentId: string, questions: stri
   );
 }
 
+export async function saveStructuredQuestions(
+  documentId: string,
+  rows: { questionText: string; rowData: Record<string, string> }[]
+): Promise<void> {
+  await Promise.all(
+    rows.map(
+      (r, i) => sql`
+        insert into questions (document_id, position, question_text, row_data)
+        values (${documentId}, ${i}, ${r.questionText}, ${JSON.stringify(r.rowData)}::jsonb)
+      `
+    )
+  );
+}
+
+// Tries structured table parsing first (preserves the original column layout for export
+// and gives per-question evidence context) and only falls back to AI-based extraction
+// from flattened text when the file isn't a table (e.g. PDFs, or a docx/xlsx that turns
+// out not to contain one). Structured parsing needs zero AI calls, so it's immune to
+// provider quota/cost issues entirely.
+export async function parseAndSaveQuestions(
+  documentId: string,
+  buffer: Buffer,
+  mimeType: string,
+  extractedText: string
+): Promise<number> {
+  let table = null;
+  if (mimeType === XLSX_MIME) {
+    table = await parseXlsxTable(buffer);
+  } else if (mimeType === DOCX_MIME) {
+    table = await parseDocxTable(buffer);
+  }
+
+  if (table) {
+    const rows = toQuestionRows(table);
+    if (rows.length > 0) {
+      await sql`update documents set column_headers = ${JSON.stringify(table.headers)}::jsonb where id = ${documentId}`;
+      await saveStructuredQuestions(documentId, rows);
+      return rows.length;
+    }
+  }
+
+  if (extractedText.trim()) {
+    const questions = await extractQuestions(extractedText);
+    await saveExtractedQuestions(documentId, questions);
+    return questions.length;
+  }
+
+  return 0;
+}
+
+// Looks for a column that names required evidence (common in bank DD questionnaires,
+// e.g. "Documents / Information Needed") to give the model extra context on what proof
+// is expected, beyond the question text itself.
+const EVIDENCE_HEADER_PATTERN = /evidence|document.*need|information.*need|required/i;
+
+function findExpectedEvidence(rowData: Record<string, string> | null | undefined): string | null {
+  if (!rowData) return null;
+  for (const [header, value] of Object.entries(rowData)) {
+    if (EVIDENCE_HEADER_PATTERN.test(header) && value.trim()) return value.trim();
+  }
+  return null;
+}
+
 const MAX_RETRIEVED_DOCS = 5;
 const MAX_EXCERPT_CHARS = 3000;
 
 export type Citation = { id: string; filename: string };
 
 export async function generateAnswer(
-  questionText: string
+  questionText: string,
+  rowData?: Record<string, string> | null
 ): Promise<{ answer: string; citations: Citation[] }> {
   const vectorLiteral = toVectorLiteral(await generateEmbedding(questionText));
 
@@ -92,14 +160,24 @@ export async function generateAnswer(
     )
     .join("\n\n");
 
+  const expectedEvidence = findExpectedEvidence(rowData);
+  const userContent = [
+    `Excerpts:\n\n${excerpts}`,
+    expectedEvidence ? `Evidence the client expects for this question: ${expectedEvidence}` : null,
+    `Question: ${questionText}`,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+
   const parsed = await generateJson<{ answer?: unknown; supportingDocumentIds?: unknown }>(
     "You are an audit compliance assistant. Answer the audit questionnaire question using ONLY " +
       "the provided policy/evidence excerpts. If the excerpts don't contain enough information to answer " +
-      "confidently, say so explicitly rather than guessing or inventing details. " +
+      "confidently, say so explicitly rather than guessing or inventing details. If the client specifies " +
+      "expected evidence, note whether the excerpts actually demonstrate it. " +
       'Respond with JSON: {"answer": string, "supportingDocumentIds": string[]}. ' +
       "supportingDocumentIds must be a subset of the doc ids shown in the excerpts, limited to the ones " +
       "that actually support your answer.",
-    `Excerpts:\n\n${excerpts}\n\nQuestion: ${questionText}`
+    userContent
   );
 
   const answer = typeof parsed.answer === "string" ? parsed.answer.trim() : "";
