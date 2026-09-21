@@ -6,7 +6,6 @@ import Nav from "@/components/Nav";
 import {
   AlertTriangle,
   ArrowLeft,
-  CheckCircle2,
   Download,
   ExternalLink,
   FileSearch,
@@ -25,10 +24,29 @@ type Question = {
   row_data: Record<string, string> | null;
   answer_text: string | null;
   citations: Citation[];
+  response_value: string | null;
+  confidence_level: "high" | "medium" | "low" | null;
+  // Postgres numeric columns are serialized as strings (avoids float precision loss).
+  confidence_score: string | number | null;
+  suggested_action: string | null;
   answer_status: "pending" | "generating" | "ok" | "failed";
   answer_error: string | null;
   created_at: string;
 };
+
+function responseBadgeClasses(value: string): string {
+  const v = value.toLowerCase();
+  if (v === "yes") return "bg-success-soft text-success";
+  if (v === "no") return "bg-danger-soft text-danger";
+  if (v === "na") return "bg-surface-hover text-muted";
+  return "bg-accent-soft text-accent"; // Partial, or free-text answers
+}
+
+function confidenceBadgeClasses(level: string): string {
+  if (level === "high") return "bg-success-soft text-success";
+  if (level === "medium") return "bg-accent-soft text-accent";
+  return "bg-danger-soft text-danger";
+}
 
 // Mirrors the heuristic in src/lib/questions.ts's findExpectedEvidence, for display only.
 const EVIDENCE_HEADER_PATTERN = /evidence|document.*need|information.*need|required/i;
@@ -213,11 +231,40 @@ export default function QuestionnairePage({ params }: { params: Promise<{ id: st
 
                     {q.answer_status === "ok" && q.answer_text && (
                       <div className="mt-3 rounded-lg bg-background px-3.5 py-3">
-                        <p className="flex items-center gap-1.5 text-xs font-medium text-success">
-                          <CheckCircle2 size={13} />
-                          Answer
-                        </p>
-                        <p className="mt-1.5 text-sm leading-relaxed text-foreground">{q.answer_text}</p>
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          {q.response_value && (
+                            <span
+                              className={`rounded-full px-2 py-0.5 text-xs font-medium ${responseBadgeClasses(q.response_value)}`}
+                            >
+                              {q.response_value}
+                            </span>
+                          )}
+                          {q.confidence_level &&
+                            (() => {
+                              const score =
+                                q.confidence_score != null ? Number(q.confidence_score) : null;
+                              return (
+                                <span
+                                  className={`rounded-full px-2 py-0.5 text-xs font-medium ${confidenceBadgeClasses(q.confidence_level)}`}
+                                >
+                                  {q.confidence_level} confidence
+                                  {score != null && !Number.isNaN(score) ? ` (${score.toFixed(2)})` : ""}
+                                </span>
+                              );
+                            })()}
+                          {q.confidence_level && q.confidence_level !== "high" && (
+                            <span className="flex items-center gap-1 rounded-full bg-danger-soft px-2 py-0.5 text-xs font-medium text-danger">
+                              <AlertTriangle size={10} />
+                              Needs review
+                            </span>
+                          )}
+                        </div>
+                        <p className="mt-2 text-sm leading-relaxed text-foreground">{q.answer_text}</p>
+                        {q.suggested_action && (
+                          <p className="mt-2 text-xs text-muted">
+                            <span className="font-medium">Suggested action:</span> {q.suggested_action}
+                          </p>
+                        )}
                         {q.citations.length > 0 && (
                           <div className="mt-3 flex flex-wrap gap-1.5">
                             {q.citations.map((c) => (

@@ -7,10 +7,23 @@ export type QuestionExportRow = {
   row_data: Record<string, string> | null;
   answer_text: string | null;
   citations: Citation[];
+  response_value: string | null;
+  confidence_level: string | null;
+  // Postgres numeric columns come back as strings from the driver (avoids float
+  // precision loss), not JS numbers.
+  confidence_score: string | number | null;
+  suggested_action: string | null;
   answer_status: string;
 };
 
-const GENERATED_HEADERS = ["AI Answer", "Evidence / Citations", "Status"];
+const GENERATED_HEADERS = [
+  "Response",
+  "Comments",
+  "Evidence / Citations",
+  "Confidence",
+  "Suggested Action",
+  "Status",
+];
 
 // Rebuilds the questionnaire as an .xlsx: if it was parsed from a structured table
 // (column_headers present), reproduces the client's original columns with generated
@@ -32,8 +45,20 @@ export async function buildQuestionnaireExport(
       columnHeaders && columnHeaders.length > 0
         ? columnHeaders.map((h) => q.row_data?.[h] ?? "")
         : [q.position + 1, q.question_text];
+    const score = q.confidence_score != null ? Number(q.confidence_score) : null;
+    const confidenceText = q.confidence_level
+      ? `${q.confidence_level}${score != null && !Number.isNaN(score) ? ` (${score.toFixed(2)})` : ""}`
+      : "";
 
-    worksheet.addRow([...leadingValues, q.answer_text ?? "", citationText, q.answer_status]);
+    worksheet.addRow([
+      ...leadingValues,
+      q.response_value ?? "",
+      q.answer_text ?? "",
+      citationText,
+      confidenceText,
+      q.suggested_action ?? "",
+      q.answer_status,
+    ]);
   }
 
   // Re-wrap through Buffer.from rather than casting: exceljs's own .d.ts declares a

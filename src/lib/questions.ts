@@ -130,26 +130,59 @@ const MAX_EXCERPT_CHARS = 3000;
 
 export type Citation = { id: string; filename: string };
 
+export type GeneratedAnswer = {
+  responseValue: string;
+  comments: string;
+  citations: Citation[];
+  confidenceLevel: "high" | "medium" | "low";
+  confidenceScore: number;
+  suggestedAction: string | null;
+};
+
+function clampConfidenceScore(value: unknown): number {
+  const n = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.min(1, n));
+}
+
+function normalizeConfidenceLevel(value: unknown): "high" | "medium" | "low" {
+  return value === "high" || value === "medium" || value === "low" ? value : "low";
+}
+
 export async function generateAnswer(
   questionText: string,
   rowData?: Record<string, string> | null
-): Promise<{ answer: string; citations: Citation[] }> {
+): Promise<GeneratedAnswer> {
   const vectorLiteral = toVectorLiteral(await generateEmbedding(questionText));
 
+  // Hybrid retrieval: blend keyword relevance (ts_rank) with semantic similarity, the
+  // same weighting used for the search bar (src/app/api/search/route.ts), so a document
+  // that's an exact terminology match but a weaker semantic match still surfaces.
   const rows = await sql`
-    select id, filename, extracted_text
+    select id, filename, extracted_text,
+           (
+             coalesce(ts_rank(
+               to_tsvector('english', coalesce(filename, '') || ' ' || coalesce(extracted_text, '')),
+               plainto_tsquery('english', ${questionText})
+             ), 0) * 0.4
+             + coalesce(1 - (embedding <=> ${vectorLiteral}::vector), 0) * 0.6
+           ) as score
     from documents
     where category in ('policy', 'evidence')
       and embedding is not null
       and extracted_text is not null
-    order by embedding <=> ${vectorLiteral}::vector
+    order by score desc
     limit ${MAX_RETRIEVED_DOCS}
   `;
 
   if (rows.length === 0) {
     return {
-      answer: "No policy or evidence documents are available yet to answer this question.",
+      responseValue: "No",
+      comments: "No supporting policy found – requires manual review.",
       citations: [],
+      confidenceLevel: "low",
+      confidenceScore: 0,
+      suggestedAction: "Upload a policy or evidence document covering this control area.",
     };
   }
 
@@ -169,19 +202,46 @@ export async function generateAnswer(
     .filter(Boolean)
     .join("\n\n");
 
-  const parsed = await generateJson<{ answer?: unknown; supportingDocumentIds?: unknown }>(
-    "You are an audit compliance assistant. Answer the audit questionnaire question using ONLY " +
-      "the provided policy/evidence excerpts. If the excerpts don't contain enough information to answer " +
-      "confidently, say so explicitly rather than guessing or inventing details. If the client specifies " +
-      "expected evidence, note whether the excerpts actually demonstrate it. " +
-      'Respond with JSON: {"answer": string, "supportingDocumentIds": string[]}. ' +
-      "supportingDocumentIds must be a subset of the doc ids shown in the excerpts, limited to the ones " +
-      "that actually support your answer.",
+  const parsed = await generateJson<{
+    response?: unknown;
+    comments?: unknown;
+    confidenceLevel?: unknown;
+    confidenceScore?: unknown;
+    suggestedAction?: unknown;
+    supportingDocumentIds?: unknown;
+  }>(
+    "You are an IT/security audit compliance assistant answering a due-diligence questionnaire " +
+      "question for a banking client, using ONLY the provided policy/evidence excerpts. Never invent " +
+      "facts not present in the excerpts, and never include passwords, API keys, or other secrets in " +
+      "your answer even if they appear in the excerpts.\n\n" +
+      "Determine:\n" +
+      '- response: "Yes" if the excerpts clearly and fully support a positive answer, "Partial" if they ' +
+      'support some but not all aspects, "No" if excerpts contradict or a negative answer is clearly ' +
+      'implied, "NA" if the question does not apply, or a short free-text value if the question is not ' +
+      "a yes/no/na question (e.g. asks for a description, a number, or a list).\n" +
+      "- comments: a concise (max 200 words), formal justification suitable for submission to a bank. " +
+      "State the control/process in place, cite the specific document (and section/clause if " +
+      "identifiable from the excerpt), and mention frequency, scope, or metrics where relevant. If " +
+      'partial, state what is missing. If no evidence was found, use exactly: "No supporting policy ' +
+      'found – requires manual review."\n' +
+      "- confidenceLevel and confidenceScore (0 to 1): \"high\" (score >= 0.85) if at least 2 strong, " +
+      'unambiguous evidence matches; "medium" (0.60-0.84) if at least one strong but incomplete match; ' +
+      '"low" (< 0.60) if evidence is weak, absent, or the question represents a gap.\n' +
+      '- suggestedAction: only when response is "No", "Partial", or confidence is low — a short, ' +
+      'concrete next step (e.g. "Draft a policy covering X", "Update the Y policy to address Z"). ' +
+      "Otherwise null.\n\n" +
+      'Respond with JSON: {"response": string, "comments": string, "confidenceLevel": ' +
+      '"high"|"medium"|"low", "confidenceScore": number, "suggestedAction": string|null, ' +
+      '"supportingDocumentIds": string[]}. supportingDocumentIds must be a subset of the doc ids shown ' +
+      "in the excerpts, limited to the ones that actually support the answer.",
     userContent
   );
 
-  const answer = typeof parsed.answer === "string" ? parsed.answer.trim() : "";
-  if (!answer) throw new Error("Gemini response did not include an answer");
+  const responseValue = typeof parsed.response === "string" ? parsed.response.trim() : "";
+  const comments = typeof parsed.comments === "string" ? parsed.comments.trim() : "";
+  if (!responseValue || !comments) {
+    throw new Error("Model response did not include a response and comments");
+  }
 
   const supportingIds = new Set(
     Array.isArray(parsed.supportingDocumentIds) ? parsed.supportingDocumentIds : []
@@ -190,5 +250,12 @@ export async function generateAnswer(
     .filter((r) => supportingIds.has(r.id as string))
     .map((r) => ({ id: r.id as string, filename: r.filename as string }));
 
-  return { answer, citations };
+  return {
+    responseValue,
+    comments,
+    citations,
+    confidenceLevel: normalizeConfidenceLevel(parsed.confidenceLevel),
+    confidenceScore: clampConfidenceScore(parsed.confidenceScore),
+    suggestedAction: typeof parsed.suggestedAction === "string" ? parsed.suggestedAction.trim() : null,
+  };
 }

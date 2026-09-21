@@ -4,6 +4,12 @@ import { generateAnswer } from "@/lib/questions";
 
 export const maxDuration = 30;
 
+const RETURNING_COLUMNS = `
+  id, document_id, position, question_text, row_data, answer_text, citations,
+  response_value, confidence_level, confidence_score, suggested_action,
+  answer_status, answer_error, created_at
+`;
+
 export async function POST(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
 
@@ -12,16 +18,21 @@ export async function POST(_request: NextRequest, { params }: { params: Promise<
   if (!question) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   try {
-    const { answer, citations } = await generateAnswer(
+    const generated = await generateAnswer(
       question.question_text as string,
       question.row_data as Record<string, string> | null
     );
     const rows = await sql`
       update questions
-      set answer_text = ${answer}, citations = ${JSON.stringify(citations)}::jsonb,
+      set answer_text = ${generated.comments},
+          citations = ${JSON.stringify(generated.citations)}::jsonb,
+          response_value = ${generated.responseValue},
+          confidence_level = ${generated.confidenceLevel},
+          confidence_score = ${generated.confidenceScore},
+          suggested_action = ${generated.suggestedAction},
           answer_status = 'ok', answer_error = null
       where id = ${id}
-      returning id, document_id, position, question_text, answer_text, citations, answer_status, answer_error, created_at
+      returning ${sql.unsafe(RETURNING_COLUMNS)}
     `;
     return NextResponse.json({ question: rows[0] });
   } catch (err) {
@@ -30,7 +41,7 @@ export async function POST(_request: NextRequest, { params }: { params: Promise<
       update questions
       set answer_status = 'failed', answer_error = ${message}
       where id = ${id}
-      returning id, document_id, position, question_text, answer_text, citations, answer_status, answer_error, created_at
+      returning ${sql.unsafe(RETURNING_COLUMNS)}
     `;
     return NextResponse.json({ question: rows[0] }, { status: 500 });
   }

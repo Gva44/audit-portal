@@ -61,4 +61,16 @@ create table if not exists questions (
 -- plain-text-parsed questions.
 alter table questions add column if not exists row_data jsonb;
 
+-- Short classification of the answer (e.g. "Yes", "No", "Partial", "NA", or free text
+-- for non-boolean questions), separate from answer_text's narrative justification.
+alter table questions add column if not exists response_value text;
+
+alter table questions add column if not exists confidence_level text
+  check (confidence_level in ('high', 'medium', 'low'));
+alter table questions add column if not exists confidence_score numeric;
+
+-- Populated when the answer represents a gap (weak/no evidence) — a suggested next
+-- step such as "draft a policy for X" or "provide evidence by <date>".
+alter table questions add column if not exists suggested_action text;
+
 create index if not exists questions_document_id_idx on questions (document_id);

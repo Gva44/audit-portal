@@ -15,7 +15,8 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
   }
 
   const questions = await sql`
-    select position, question_text, row_data, answer_text, citations, answer_status
+    select position, question_text, row_data, answer_text, citations,
+           response_value, confidence_level, confidence_score, suggested_action, answer_status
     from questions
     where document_id = ${id}
     order by position asc
@@ -29,6 +30,10 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
       row_data: q.row_data as Record<string, string> | null,
       answer_text: q.answer_text as string | null,
       citations: q.citations as { id: string; filename: string }[],
+      response_value: q.response_value as string | null,
+      confidence_level: q.confidence_level as string | null,
+      confidence_score: q.confidence_score as string | number | null,
+      suggested_action: q.suggested_action as string | null,
       answer_status: q.answer_status as string,
     }))
   );

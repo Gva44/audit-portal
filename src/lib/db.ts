@@ -15,10 +15,15 @@ function getSql(): NeonQueryFunction<false, false> {
   return _sql;
 }
 
-// Proxy forwards tagged-template calls (sql`...`) to the lazily created client.
+// Proxy forwards tagged-template calls (sql`...`) *and* property access (sql.unsafe,
+// sql.transaction, etc.) to the lazily created client.
 export const sql = new Proxy((() => {}) as unknown as NeonQueryFunction<false, false>, {
   apply(_target, _thisArg, args: Parameters<NeonQueryFunction<false, false>>) {
     return Reflect.apply(getSql(), _thisArg, args);
+  },
+  get(_target, prop, receiver) {
+    const value = Reflect.get(getSql(), prop, receiver);
+    return typeof value === "function" ? value.bind(getSql()) : value;
   },
 });
 
