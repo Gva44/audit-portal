@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   ClipboardList,
   FileCheck2,
+  FileImage,
   FileSearch,
   FileText,
   Loader2,
@@ -14,10 +15,12 @@ import {
   X,
 } from "lucide-react";
 
+const NOTES_MAX_LENGTH = 500;
+
 const CATEGORIES = [
-  { value: "policy", label: "Policy", icon: FileCheck2 },
-  { value: "evidence", label: "Evidence", icon: FileSearch },
-  { value: "questionnaire", label: "Questionnaire", icon: ClipboardList },
+  { value: "policy", label: "Policy", icon: FileCheck2, description: "Internal policies & standards" },
+  { value: "evidence", label: "Evidence", icon: FileSearch, description: "Certifications, reports, screenshots" },
+  { value: "questionnaire", label: "Questionnaire", icon: ClipboardList, description: "Bank/vendor DDQ to answer" },
 ];
 
 type Status =
@@ -74,96 +77,114 @@ export default function UploadPage() {
           Add a policy, evidence file, or questionnaire to the library.
         </p>
 
-        <div
-          onDragOver={(e) => {
-            e.preventDefault();
-            setDragging(true);
-          }}
-          onDragLeave={() => setDragging(false)}
-          onDrop={handleDrop}
-          className={`mb-6 flex flex-col items-center justify-center rounded-2xl border-2 border-dashed px-6 py-14 text-center transition-colors ${
-            dragging ? "border-accent bg-accent-soft" : "border-border bg-surface"
-          }`}
-        >
-          {file ? (
-            <div className="flex flex-col items-center">
-              <span className="mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-accent-soft text-accent">
-                <FileText size={20} />
-              </span>
-              <p className="max-w-xs truncate text-sm font-medium text-foreground">{file.name}</p>
-              <p className="text-xs text-muted">{(file.size / 1024).toFixed(1)} KB</p>
-              <button
-                onClick={() => setFile(null)}
-                className="mt-3 flex items-center gap-1 rounded-full border border-border px-2.5 py-1 text-xs font-medium text-muted transition-colors hover:bg-surface-hover hover:text-foreground"
-              >
-                <X size={12} />
-                Remove
-              </button>
-            </div>
-          ) : (
-            <>
-              <span className="mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-accent-soft text-accent">
-                <UploadCloud size={20} />
-              </span>
-              <p className="mb-3 text-sm text-muted">Drag and drop a file here, or</p>
-              <label className="cursor-pointer rounded-full bg-accent px-4 py-2 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent-hover">
-                Browse files
-                <input
-                  type="file"
-                  accept=".docx,.xlsx,.pdf,.png,.jpg,.jpeg,.webp,.gif"
-                  className="hidden"
-                  onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-                />
-              </label>
-              <p className="mt-3 text-xs text-muted-2">.docx, .xlsx, .pdf, or images (max ~4MB)</p>
-            </>
-          )}
-        </div>
-
-        <div className="mb-5">
-          <label className="mb-2 block text-sm font-medium text-foreground">Category</label>
-          <div className="flex flex-wrap gap-2">
-            {CATEGORIES.map((c) => {
-              const Icon = c.icon;
-              const selected = category === c.value;
-              return (
+        <div className="rounded-2xl border border-border bg-surface p-6 shadow-card">
+          <div
+            onDragOver={(e) => {
+              e.preventDefault();
+              setDragging(true);
+            }}
+            onDragLeave={() => setDragging(false)}
+            onDrop={handleDrop}
+            className={`mb-6 flex flex-col items-center justify-center rounded-xl border-2 border-dashed px-6 py-14 text-center transition-colors ${
+              dragging ? "border-accent bg-accent-soft" : "border-border bg-background"
+            }`}
+          >
+            {file ? (
+              <div className="flex flex-col items-center">
+                <span className="mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-accent-soft text-accent">
+                  {file.type.startsWith("image/") ? <FileImage size={20} /> : <FileText size={20} />}
+                </span>
+                <p className="max-w-xs truncate text-sm font-medium text-foreground">{file.name}</p>
+                <p className="text-xs text-muted">{(file.size / 1024).toFixed(1)} KB</p>
                 <button
-                  key={c.value}
-                  type="button"
-                  onClick={() => setCategory(c.value)}
-                  className={`flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-sm font-medium transition-colors ${
-                    selected
-                      ? "border-accent bg-accent-soft text-accent"
-                      : "border-border bg-surface text-muted hover:bg-surface-hover"
-                  }`}
+                  onClick={() => setFile(null)}
+                  className="mt-3 flex items-center gap-1 rounded-full border border-border px-2.5 py-1 text-xs font-medium text-muted transition-colors hover:bg-surface-hover hover:text-foreground"
                 >
-                  <Icon size={14} />
-                  {c.label}
+                  <X size={12} />
+                  Remove
                 </button>
-              );
-            })}
+              </div>
+            ) : (
+              <>
+                <span className="mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-accent-soft text-accent">
+                  <UploadCloud size={20} />
+                </span>
+                <p className="mb-3 text-sm text-muted">Drag and drop a file here, or</p>
+                <label className="cursor-pointer rounded-full bg-accent px-4 py-2 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent-hover">
+                  Browse files
+                  <input
+                    type="file"
+                    accept=".docx,.xlsx,.pdf,.png,.jpg,.jpeg,.webp,.gif"
+                    className="hidden"
+                    onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                  />
+                </label>
+                <p className="mt-3 text-xs text-muted-2">.docx, .xlsx, .pdf, or images (max ~4MB)</p>
+              </>
+            )}
           </div>
-        </div>
 
-        <div className="mb-7">
-          <label className="mb-2 block text-sm font-medium text-foreground">Notes (optional)</label>
-          <textarea
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            rows={3}
-            className="w-full rounded-lg border border-border bg-surface px-3.5 py-2.5 text-sm text-foreground outline-none transition-colors placeholder:text-muted-2 focus:border-accent"
-            placeholder="Any context for this document..."
-          />
-        </div>
+          <div className="mb-5">
+            <label className="mb-2 block text-sm font-medium text-foreground">Category</label>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+              {CATEGORIES.map((c) => {
+                const Icon = c.icon;
+                const selected = category === c.value;
+                return (
+                  <button
+                    key={c.value}
+                    type="button"
+                    onClick={() => setCategory(c.value)}
+                    className={`flex flex-col items-start gap-1 rounded-lg border px-3.5 py-2.5 text-left text-sm font-medium transition-colors ${
+                      selected
+                        ? "border-accent bg-accent-soft text-accent"
+                        : "border-border bg-background text-muted hover:bg-surface-hover"
+                    }`}
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <Icon size={14} />
+                      {c.label}
+                    </span>
+                    <span className={`text-xs font-normal ${selected ? "text-accent" : "text-muted-2"}`}>
+                      {c.description}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            {category === "questionnaire" && (
+              <p className="mt-2 text-xs text-muted-2">
+                Tip: keep the original row structure in Excel or Word — it&apos;s used to automatically match questions to answers.
+              </p>
+            )}
+          </div>
 
-        <button
-          onClick={handleUpload}
-          disabled={!file || status.type === "uploading"}
-          className="flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {status.type === "uploading" && <Loader2 size={16} className="animate-spin" />}
-          {status.type === "uploading" ? "Uploading & processing..." : "Upload"}
-        </button>
+          <div className="mb-7">
+            <div className="mb-2 flex items-center justify-between">
+              <label className="block text-sm font-medium text-foreground">Notes (optional)</label>
+              <span className="text-xs text-muted-2">
+                {notes.length} / {NOTES_MAX_LENGTH}
+              </span>
+            </div>
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value.slice(0, NOTES_MAX_LENGTH))}
+              maxLength={NOTES_MAX_LENGTH}
+              rows={3}
+              className="w-full rounded-lg border border-border bg-background px-3.5 py-2.5 text-sm text-foreground outline-none transition-colors placeholder:text-muted-2 focus:border-accent"
+              placeholder="Any context for this document..."
+            />
+          </div>
+
+          <button
+            onClick={handleUpload}
+            disabled={!file || status.type === "uploading"}
+            className="flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {status.type === "uploading" && <Loader2 size={16} className="animate-spin" />}
+            {status.type === "uploading" ? "Uploading & processing..." : "Upload"}
+          </button>
+        </div>
 
         {status.type === "success" && (
           <p className="mt-4 flex items-center gap-2 text-sm text-success">

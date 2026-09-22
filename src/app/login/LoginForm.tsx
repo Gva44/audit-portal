@@ -2,10 +2,11 @@
 
 import { FormEvent, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ShieldCheck } from "lucide-react";
+import { Eye, EyeOff, Lock, ShieldCheck } from "lucide-react";
 
 export default function LoginForm() {
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const router = useRouter();
@@ -33,21 +34,35 @@ export default function LoginForm() {
   return (
     <form
       onSubmit={handleSubmit}
-      className="w-full max-w-sm rounded-2xl border border-border bg-surface p-8 shadow-[0_1px_2px_rgba(35,32,27,0.04),0_12px_32px_-16px_rgba(35,32,27,0.12)]"
+      className="w-full max-w-sm rounded-2xl border border-border bg-surface p-8 shadow-modal"
     >
       <span className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-accent text-accent-foreground">
         <ShieldCheck size={20} strokeWidth={2.25} />
       </span>
       <h1 className="mb-1 text-lg font-semibold tracking-tight text-foreground">Audit Portal</h1>
       <p className="mb-6 text-sm text-muted">Enter the access password to continue.</p>
-      <input
-        type="password"
-        autoFocus
-        value={password}
-        onChange={(e) => setPassword(e.target.value)}
-        placeholder="Password"
-        className="mb-3 w-full rounded-lg border border-border bg-background px-3.5 py-2.5 text-sm text-foreground outline-none transition-colors placeholder:text-muted-2 focus:border-accent"
-      />
+      <div className="relative mb-3">
+        <Lock
+          size={15}
+          className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-2"
+        />
+        <input
+          type={showPassword ? "text" : "password"}
+          autoFocus
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          placeholder="Password"
+          className="w-full rounded-lg border border-border bg-background py-2.5 pl-10 pr-10 text-sm text-foreground outline-none transition-colors placeholder:text-muted-2 focus:border-accent"
+        />
+        <button
+          type="button"
+          onClick={() => setShowPassword((v) => !v)}
+          aria-label={showPassword ? "Hide password" : "Show password"}
+          className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-2 transition-colors hover:text-muted"
+        >
+          {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+        </button>
+      </div>
       {error && <p className="mb-3 text-sm text-danger">{error}</p>}
       <button
         type="submit"
