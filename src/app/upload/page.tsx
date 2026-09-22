@@ -110,12 +110,12 @@ export default function UploadPage() {
                 Browse files
                 <input
                   type="file"
-                  accept=".docx,.pdf,.png,.jpg,.jpeg,.webp,.gif"
+                  accept=".docx,.xlsx,.pdf,.png,.jpg,.jpeg,.webp,.gif"
                   className="hidden"
                   onChange={(e) => setFile(e.target.files?.[0] ?? null)}
                 />
               </label>
-              <p className="mt-3 text-xs text-muted-2">.docx, .pdf, or images (max ~4MB)</p>
+              <p className="mt-3 text-xs text-muted-2">.docx, .xlsx, .pdf, or images (max ~4MB)</p>
             </>
           )}
         </div>
