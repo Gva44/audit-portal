@@ -232,7 +232,7 @@ export default function LibraryPage() {
             return (
               <li
                 key={doc.id}
-                className="overflow-hidden rounded-xl border border-border bg-surface transition-colors hover:border-border-strong"
+                className="overflow-hidden rounded-xl border border-border bg-surface shadow-card transition-colors hover:border-border-strong"
               >
                 <div
                   role="button"

@@ -43,13 +43,13 @@ function responseBadgeClasses(value: string): string {
   if (v === "yes") return "bg-success-soft text-success";
   if (v === "no") return "bg-danger-soft text-danger";
   if (v === "na") return "bg-surface-hover text-muted";
-  if (v === "partial") return "bg-warning-soft text-warning";
+  if (v === "partial") return "border border-warning-border bg-warning-soft text-warning";
   return "bg-accent-soft text-accent"; // free-text (non yes/no/na/partial) answers
 }
 
 function confidenceBadgeClasses(level: string): string {
   if (level === "high") return "bg-success-soft text-success";
-  if (level === "medium") return "bg-warning-soft text-warning";
+  if (level === "medium") return "border border-warning-border bg-warning-soft text-warning";
   return "bg-danger-soft text-danger";
 }
 
@@ -234,7 +234,7 @@ export default function QuestionnairePage({ params }: { params: Promise<{ id: st
             </div>
 
             {questions.length > 0 && (
-              <div className="mb-8 flex flex-wrap items-center gap-2 rounded-xl border border-border bg-surface px-4 py-3">
+              <div className="mb-8 flex flex-wrap items-center gap-2 rounded-xl border border-border bg-surface px-4 py-3 shadow-card">
                 <span className="text-sm text-muted">Or generate just questions</span>
                 <input
                   type="number"
@@ -312,7 +312,7 @@ export default function QuestionnairePage({ params }: { params: Promise<{ id: st
                 const isGenerating = generatingIds.has(q.id);
                 const expectedEvidence = findExpectedEvidence(q.row_data);
                 return (
-                  <li key={q.id} className="rounded-xl border border-border bg-surface p-4">
+                  <li key={q.id} className="rounded-xl border border-border bg-surface p-4 shadow-card">
                     <div className="mb-2 flex items-start justify-between gap-3">
                       <div>
                         <p className="whitespace-pre-line text-sm font-medium text-foreground">

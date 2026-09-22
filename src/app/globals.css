@@ -23,6 +23,7 @@
   --success-soft: #e1f0e7;
   --warning: #8f5800;
   --warning-soft: #fef6e7;
+  --warning-border: #fcdca2;
 
   --shadow-card: 0 1px 3px rgba(16, 24, 40, 0.06), 0 1px 2px rgba(16, 24, 40, 0.04);
 }
@@ -48,6 +49,7 @@
   --color-success-soft: var(--success-soft);
   --color-warning: var(--warning);
   --color-warning-soft: var(--warning-soft);
+  --color-warning-border: var(--warning-border);
 
   --shadow-card: var(--shadow-card);
 
