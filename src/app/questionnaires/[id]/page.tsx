@@ -32,6 +32,7 @@ type Question = {
   suggested_action: string | null;
   prior_question_id: string | null;
   prior_question_text: string | null;
+  prior_document_filename: string | null;
   answer_status: "pending" | "generating" | "ok" | "failed";
   answer_error: string | null;
   created_at: string;
@@ -325,14 +326,11 @@ export default function QuestionnairePage({ params }: { params: Promise<{ id: st
                           {q.prior_question_id && (
                             <span
                               className="flex items-center gap-1 rounded-full bg-surface-hover px-2 py-0.5 text-xs font-medium text-muted"
-                              title={
-                                q.prior_question_text
-                                  ? `Matched previous question: "${q.prior_question_text}"`
-                                  : "Matched a previous question"
-                              }
+                              title={q.prior_question_text ? `Matched question: "${q.prior_question_text}"` : undefined}
                             >
                               <History size={10} />
-                              Checked against a previous answer
+                              Checked against{" "}
+                              {q.prior_document_filename ? `"${q.prior_document_filename}"` : "a previous answer"}
                             </span>
                           )}
                         </div>
