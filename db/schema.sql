@@ -73,4 +73,17 @@ alter table questions add column if not exists confidence_score numeric;
 -- step such as "draft a policy for X" or "provide evidence by <date>".
 alter table questions add column if not exists suggested_action text;
 
+-- Embedding of question_text, populated the first time an answer is generated for this
+-- question (reuses the same vector already computed for policy/evidence retrieval — see
+-- generateAnswer in src/lib/questions.ts). Lets a *future* questionnaire's questions find
+-- this one as a prior-year match, without needing any manual linking between files.
+alter table questions add column if not exists embedding vector(768);
+
+-- The prior question (from a different questionnaire, likely last year's) whose answer
+-- was used as reference context when generating this one, if a close-enough match existed.
+alter table questions add column if not exists prior_question_id uuid references questions(id);
+
 create index if not exists questions_document_id_idx on questions (document_id);
+
+create index if not exists questions_embedding_idx on questions
+  using ivfflat (embedding vector_cosine_ops) with (lists = 100);

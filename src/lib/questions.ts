@@ -137,7 +137,18 @@ export type GeneratedAnswer = {
   confidenceLevel: "high" | "medium" | "low";
   confidenceScore: number;
   suggestedAction: string | null;
+  // The question's own embedding (for persisting so *future* similar questions, e.g. next
+  // year's questionnaire, can find this one), and which prior question (if any) was used
+  // as reference context — both null when there's nothing to store.
+  embeddingLiteral: string;
+  priorQuestionId: string | null;
 };
+
+// How close two questions' meanings must be (cosine similarity, 0-1) to treat one as a
+// genuine "this was asked before" match rather than just a topically related question.
+// Deliberately high since a wrong match would feed the model an answer to a different
+// question — worth tuning based on real results once this has real year-over-year data.
+const PRIOR_MATCH_THRESHOLD = 0.85;
 
 function clampConfidenceScore(value: unknown): number {
   const n = typeof value === "number" ? value : Number(value);
@@ -151,7 +162,8 @@ function normalizeConfidenceLevel(value: unknown): "high" | "medium" | "low" {
 
 export async function generateAnswer(
   questionText: string,
-  rowData?: Record<string, string> | null
+  rowData?: Record<string, string> | null,
+  currentQuestionId?: string | null
 ): Promise<GeneratedAnswer> {
   const vectorLiteral = toVectorLiteral(await generateEmbedding(questionText));
 
@@ -175,6 +187,21 @@ export async function generateAnswer(
     limit ${MAX_RETRIEVED_DOCS}
   `;
 
+  // Automatically finds a prior answer to a near-identical question from *any* previous
+  // questionnaire (typically last year's, but not limited to that) — no manual linking
+  // between files needed. Excludes the current question itself when it already has an id.
+  const priorRows = await sql`
+    select id, question_text, response_value, answer_text
+    from questions
+    where answer_status = 'ok'
+      and embedding is not null
+      and (${currentQuestionId}::uuid is null or id != ${currentQuestionId}::uuid)
+      and (1 - (embedding <=> ${vectorLiteral}::vector)) > ${PRIOR_MATCH_THRESHOLD}
+    order by embedding <=> ${vectorLiteral}::vector
+    limit 1
+  `;
+  const priorMatch = priorRows[0] ?? null;
+
   if (rows.length === 0) {
     return {
       responseValue: "No",
@@ -183,6 +210,8 @@ export async function generateAnswer(
       confidenceLevel: "low",
       confidenceScore: 0,
       suggestedAction: "Upload a policy or evidence document covering this control area.",
+      embeddingLiteral: vectorLiteral,
+      priorQuestionId: null,
     };
   }
 
@@ -197,6 +226,14 @@ export async function generateAnswer(
   const userContent = [
     `Excerpts:\n\n${excerpts}`,
     expectedEvidence ? `Evidence the client expects for this question: ${expectedEvidence}` : null,
+    priorMatch
+      ? `A previous questionnaire asked a near-identical question and was answered as follows ` +
+        `(reuse or adapt this ONLY if the excerpts above still support it — if the excerpts contradict ` +
+        `it or no longer support it, answer fresh from the excerpts instead):\n` +
+        `Previous question: ${priorMatch.question_text}\n` +
+        `Previous response: ${priorMatch.response_value}\n` +
+        `Previous comments: ${priorMatch.answer_text}`
+      : null,
     `Question: ${questionText}`,
   ]
     .filter(Boolean)
@@ -229,7 +266,10 @@ export async function generateAnswer(
       '"low" (< 0.60) if evidence is weak, absent, or the question represents a gap.\n' +
       '- suggestedAction: only when response is "No", "Partial", or confidence is low — a short, ' +
       'concrete next step (e.g. "Draft a policy covering X", "Update the Y policy to address Z"). ' +
-      "Otherwise null.\n\n" +
+      "Otherwise null.\n" +
+      "If a previous answer to a near-identical question is provided below, treat it as reference " +
+      "only — verify it against the current excerpts and never carry it forward if the excerpts no " +
+      "longer support it.\n\n" +
       'Respond with JSON: {"response": string, "comments": string, "confidenceLevel": ' +
       '"high"|"medium"|"low", "confidenceScore": number, "suggestedAction": string|null, ' +
       '"supportingDocumentIds": string[]}. supportingDocumentIds must be a subset of the doc ids shown ' +
@@ -257,5 +297,7 @@ export async function generateAnswer(
     confidenceLevel: normalizeConfidenceLevel(parsed.confidenceLevel),
     confidenceScore: clampConfidenceScore(parsed.confidenceScore),
     suggestedAction: typeof parsed.suggestedAction === "string" ? parsed.suggestedAction.trim() : null,
+    embeddingLiteral: vectorLiteral,
+    priorQuestionId: priorMatch ? (priorMatch.id as string) : null,
   };
 }

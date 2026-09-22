@@ -6,7 +6,7 @@ export const maxDuration = 30;
 
 const RETURNING_COLUMNS = `
   id, document_id, position, question_text, row_data, answer_text, citations,
-  response_value, confidence_level, confidence_score, suggested_action,
+  response_value, confidence_level, confidence_score, suggested_action, prior_question_id,
   answer_status, answer_error, created_at
 `;
 
@@ -20,7 +20,8 @@ export async function POST(_request: NextRequest, { params }: { params: Promise<
   try {
     const generated = await generateAnswer(
       question.question_text as string,
-      question.row_data as Record<string, string> | null
+      question.row_data as Record<string, string> | null,
+      id
     );
     const rows = await sql`
       update questions
@@ -30,6 +31,8 @@ export async function POST(_request: NextRequest, { params }: { params: Promise<
           confidence_level = ${generated.confidenceLevel},
           confidence_score = ${generated.confidenceScore},
           suggested_action = ${generated.suggestedAction},
+          embedding = ${generated.embeddingLiteral}::vector,
+          prior_question_id = ${generated.priorQuestionId},
           answer_status = 'ok', answer_error = null
       where id = ${id}
       returning ${sql.unsafe(RETURNING_COLUMNS)}
