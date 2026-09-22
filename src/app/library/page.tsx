@@ -258,7 +258,7 @@ export default function LibraryPage() {
                         {doc.category}
                       </span>
                       {doc.extraction_status === "failed" && (
-                        <span className="flex shrink-0 items-center gap-1 rounded-full bg-danger-soft px-2 py-0.5 text-xs font-medium text-danger">
+                        <span className="flex shrink-0 items-center gap-1 rounded-full border border-danger-border bg-danger-soft px-2 py-0.5 text-xs font-medium text-danger">
                           <AlertTriangle size={11} />
                           extraction failed
                         </span>

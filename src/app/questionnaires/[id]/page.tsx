@@ -40,17 +40,17 @@ type Question = {
 
 function responseBadgeClasses(value: string): string {
   const v = value.toLowerCase();
-  if (v === "yes") return "bg-success-soft text-success";
-  if (v === "no") return "bg-danger-soft text-danger";
-  if (v === "na") return "bg-surface-hover text-muted";
+  if (v === "yes") return "border border-success-border bg-success-soft text-success";
+  if (v === "no") return "border border-danger-border bg-danger-soft text-danger";
+  if (v === "na") return "border border-neutral-border bg-surface-hover text-muted";
   if (v === "partial") return "border border-warning-border bg-warning-soft text-warning";
   return "bg-accent-soft text-accent"; // free-text (non yes/no/na/partial) answers
 }
 
 function confidenceBadgeClasses(level: string): string {
-  if (level === "high") return "bg-success-soft text-success";
+  if (level === "high") return "border border-success-border bg-success-soft text-success";
   if (level === "medium") return "border border-warning-border bg-warning-soft text-warning";
-  return "bg-danger-soft text-danger";
+  return "border border-danger-border bg-danger-soft text-danger";
 }
 
 // Mirrors the heuristic in src/lib/questions.ts's findExpectedEvidence, for display only.
@@ -362,7 +362,7 @@ export default function QuestionnairePage({ params }: { params: Promise<{ id: st
                               );
                             })()}
                           {q.confidence_level && q.confidence_level !== "high" && (
-                            <span className="flex items-center gap-1 rounded-full bg-danger-soft px-2 py-0.5 text-xs font-medium text-danger">
+                            <span className="flex items-center gap-1 rounded-full border border-danger-border bg-danger-soft px-2 py-0.5 text-xs font-medium text-danger">
                               <AlertTriangle size={10} />
                               Needs review
                             </span>
