@@ -43,12 +43,13 @@ function responseBadgeClasses(value: string): string {
   if (v === "yes") return "bg-success-soft text-success";
   if (v === "no") return "bg-danger-soft text-danger";
   if (v === "na") return "bg-surface-hover text-muted";
-  return "bg-accent-soft text-accent"; // Partial, or free-text answers
+  if (v === "partial") return "bg-warning-soft text-warning";
+  return "bg-accent-soft text-accent"; // free-text (non yes/no/na/partial) answers
 }
 
 function confidenceBadgeClasses(level: string): string {
   if (level === "high") return "bg-success-soft text-success";
-  if (level === "medium") return "bg-accent-soft text-accent";
+  if (level === "medium") return "bg-warning-soft text-warning";
   return "bg-danger-soft text-danger";
 }
 
@@ -77,6 +78,7 @@ export default function QuestionnairePage({ params }: { params: Promise<{ id: st
   const [rangeFrom, setRangeFrom] = useState("1");
   const [rangeTo, setRangeTo] = useState("20");
   const [generatingRange, setGeneratingRange] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<"all" | "needs_review" | "pending" | "answered">("all");
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
@@ -165,6 +167,24 @@ export default function QuestionnairePage({ params }: { params: Promise<{ id: st
   }
 
   const answeredCount = questions.filter((q) => q.answer_status === "ok").length;
+  const needsReviewCount = questions.filter(
+    (q) => q.answer_status === "ok" && q.confidence_level !== "high"
+  ).length;
+  const pendingCount = questions.filter((q) => q.answer_status !== "ok").length;
+
+  const STATUS_FILTERS: { value: typeof statusFilter; label: string; count: number }[] = [
+    { value: "all", label: "All", count: questions.length },
+    { value: "needs_review", label: "Needs review", count: needsReviewCount },
+    { value: "pending", label: "Pending", count: pendingCount },
+    { value: "answered", label: "Answered", count: answeredCount },
+  ];
+
+  const visibleQuestions = questions.filter((q) => {
+    if (statusFilter === "needs_review") return q.answer_status === "ok" && q.confidence_level !== "high";
+    if (statusFilter === "pending") return q.answer_status !== "ok";
+    if (statusFilter === "answered") return q.answer_status === "ok";
+    return true;
+  });
 
   return (
     <div className="min-h-screen bg-background">
@@ -245,6 +265,24 @@ export default function QuestionnairePage({ params }: { params: Promise<{ id: st
               </div>
             )}
 
+            {questions.length > 0 && (
+              <div className="mb-4 flex flex-wrap gap-1.5">
+                {STATUS_FILTERS.map((f) => (
+                  <button
+                    key={f.value}
+                    onClick={() => setStatusFilter(f.value)}
+                    className={`rounded-full border px-3 py-1.5 text-sm font-medium transition-colors ${
+                      statusFilter === f.value
+                        ? "border-accent bg-accent-soft text-accent"
+                        : "border-border bg-surface text-muted hover:bg-surface-hover"
+                    }`}
+                  >
+                    {f.label} ({f.count})
+                  </button>
+                ))}
+              </div>
+            )}
+
             {questions.length === 0 && (
               <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border py-10 text-center">
                 <span className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-surface-hover text-muted-2">
@@ -263,8 +301,14 @@ export default function QuestionnairePage({ params }: { params: Promise<{ id: st
               </div>
             )}
 
+            {questions.length > 0 && visibleQuestions.length === 0 && (
+              <p className="rounded-xl border border-dashed border-border py-10 text-center text-sm text-muted">
+                No questions match this filter.
+              </p>
+            )}
+
             <ul className="space-y-3">
-              {questions.map((q) => {
+              {visibleQuestions.map((q) => {
                 const isGenerating = generatingIds.has(q.id);
                 const expectedEvidence = findExpectedEvidence(q.row_data);
                 return (

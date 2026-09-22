@@ -1,6 +1,6 @@
 "use client";
 
-import { MouseEvent, useCallback, useEffect, useState } from "react";
+import { MouseEvent, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import Nav from "@/components/Nav";
 import Highlighted from "@/components/Highlighted";
@@ -58,10 +58,12 @@ export default function LibraryPage() {
   const [category, setCategory] = useState("");
   const [query, setQuery] = useState("");
   const [documents, setDocuments] = useState<DocSummary[]>([]);
+  const [counts, setCounts] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [expandedDoc, setExpandedDoc] = useState<DocDetail | null>(null);
   const [expandedLoading, setExpandedLoading] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   const fetchDocuments = useCallback(async () => {
     setLoading(true);
@@ -83,10 +85,38 @@ export default function LibraryPage() {
     }
   }, [category, query]);
 
+  const fetchCounts = useCallback(async () => {
+    const res = await fetch(`/api/documents`);
+    const data = await res.json();
+    const all: DocSummary[] = data.documents ?? [];
+    const next: Record<string, number> = {};
+    for (const doc of all) {
+      next[doc.category] = (next[doc.category] ?? 0) + 1;
+    }
+    next[""] = all.length;
+    setCounts(next);
+  }, []);
+
   useEffect(() => {
     const t = setTimeout(fetchDocuments, query ? 350 : 0);
     return () => clearTimeout(t);
   }, [fetchDocuments, query]);
+
+  useEffect(() => {
+    const t = setTimeout(fetchCounts, 0);
+    return () => clearTimeout(t);
+  }, [fetchCounts]);
+
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   async function toggleExpand(id: string) {
     if (expandedId === id) {
@@ -111,6 +141,7 @@ export default function LibraryPage() {
       setExpandedDoc(null);
     }
     fetchDocuments();
+    fetchCounts();
   }
 
   return (
@@ -129,6 +160,7 @@ export default function LibraryPage() {
             {CATEGORIES.map((c) => {
               const Icon = c.icon;
               const selected = category === c.value;
+              const count = counts[c.value];
               return (
                 <button
                   key={c.value}
@@ -141,6 +173,13 @@ export default function LibraryPage() {
                 >
                   <Icon size={14} />
                   {c.label}
+                  {typeof count === "number" && (
+                    <span
+                      className={`text-xs ${selected ? "text-accent" : "text-muted-2"}`}
+                    >
+                      {count}
+                    </span>
+                  )}
                 </button>
               );
             })}
@@ -151,12 +190,18 @@ export default function LibraryPage() {
               className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-2"
             />
             <input
+              ref={searchInputRef}
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search keyword or meaning..."
-              className="w-full rounded-full border border-border bg-surface py-2 pl-9 pr-3.5 text-sm text-foreground outline-none transition-colors placeholder:text-muted-2 focus:border-accent"
+              className="w-full rounded-full border border-border bg-surface py-2 pl-9 pr-11 text-sm text-foreground outline-none transition-colors placeholder:text-muted-2 focus:border-accent"
             />
+            {!query && (
+              <kbd className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 rounded border border-border bg-surface-hover px-1.5 py-0.5 text-[10px] font-medium text-muted-2">
+                ⌘K
+              </kbd>
+            )}
           </div>
         </div>
 
