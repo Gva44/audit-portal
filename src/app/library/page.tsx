@@ -233,10 +233,10 @@ export default function LibraryPage() {
                       <Link
                         href={`/questionnaires/${doc.id}`}
                         onClick={(e) => e.stopPropagation()}
-                        title="View questions & answers"
-                        className="rounded-lg p-2 text-muted transition-colors hover:bg-accent-soft hover:text-accent"
+                        className="flex items-center gap-1.5 rounded-full bg-accent px-3 py-1.5 text-xs font-medium text-accent-foreground transition-colors hover:bg-accent-hover"
                       >
-                        <Sparkles size={15} />
+                        <Sparkles size={13} />
+                        Answer questions
                       </Link>
                     )}
                     <a

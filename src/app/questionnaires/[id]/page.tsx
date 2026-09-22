@@ -70,6 +70,9 @@ export default function QuestionnairePage({ params }: { params: Promise<{ id: st
   const [generatingIds, setGeneratingIds] = useState<Set<string>>(new Set());
   const [extracting, setExtracting] = useState(false);
   const [extractError, setExtractError] = useState<string | null>(null);
+  const [rangeFrom, setRangeFrom] = useState("1");
+  const [rangeTo, setRangeTo] = useState("20");
+  const [generatingRange, setGeneratingRange] = useState(false);
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
@@ -124,15 +127,36 @@ export default function QuestionnairePage({ params }: { params: Promise<{ id: st
     }
   }
 
+  async function generateBatch(ids: string[]) {
+    for (const questionId of ids) {
+      await generateOne(questionId);
+    }
+  }
+
   async function generateAll() {
     setGeneratingAll(true);
     try {
       const pending = questions.filter((q) => q.answer_status !== "ok");
-      for (const q of pending) {
-        await generateOne(q.id);
-      }
+      await generateBatch(pending.map((q) => q.id));
     } finally {
       setGeneratingAll(false);
+    }
+  }
+
+  async function generateRange() {
+    const from = Number(rangeFrom);
+    const to = Number(rangeTo);
+    if (!Number.isFinite(from) || !Number.isFinite(to) || from < 1 || to < from) return;
+
+    setGeneratingRange(true);
+    try {
+      // position is 0-indexed internally; the UI shows 1-indexed question numbers.
+      const inRange = questions.filter(
+        (q) => q.position + 1 >= from && q.position + 1 <= to && q.answer_status !== "ok"
+      );
+      await generateBatch(inRange.map((q) => q.id));
+    } finally {
+      setGeneratingRange(false);
     }
   }
 
@@ -171,7 +195,12 @@ export default function QuestionnairePage({ params }: { params: Promise<{ id: st
                 </a>
                 <button
                   onClick={generateAll}
-                  disabled={generatingAll || questions.length === 0 || questions.every((q) => q.answer_status === "ok")}
+                  disabled={
+                    generatingAll ||
+                    generatingRange ||
+                    questions.length === 0 ||
+                    questions.every((q) => q.answer_status === "ok")
+                  }
                   className="flex items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {generatingAll ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
@@ -179,6 +208,38 @@ export default function QuestionnairePage({ params }: { params: Promise<{ id: st
                 </button>
               </div>
             </div>
+
+            {questions.length > 0 && (
+              <div className="mb-8 flex flex-wrap items-center gap-2 rounded-xl border border-border bg-surface px-4 py-3">
+                <span className="text-sm text-muted">Or generate just questions</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={questions.length}
+                  value={rangeFrom}
+                  onChange={(e) => setRangeFrom(e.target.value)}
+                  className="w-16 rounded-lg border border-border bg-background px-2 py-1.5 text-center text-sm text-foreground outline-none focus:border-accent"
+                />
+                <span className="text-sm text-muted">to</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={questions.length}
+                  value={rangeTo}
+                  onChange={(e) => setRangeTo(e.target.value)}
+                  className="w-16 rounded-lg border border-border bg-background px-2 py-1.5 text-center text-sm text-foreground outline-none focus:border-accent"
+                />
+                <span className="text-sm text-muted">of {questions.length}</span>
+                <button
+                  onClick={generateRange}
+                  disabled={generatingAll || generatingRange}
+                  className="ml-auto flex items-center gap-2 rounded-lg border border-border bg-background px-3.5 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {generatingRange ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                  {generatingRange ? "Generating..." : "Generate range"}
+                </button>
+              </div>
+            )}
 
             {questions.length === 0 && (
               <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border py-10 text-center">
@@ -217,7 +278,7 @@ export default function QuestionnairePage({ params }: { params: Promise<{ id: st
                       </div>
                       <button
                         onClick={() => generateOne(q.id)}
-                        disabled={isGenerating || generatingAll}
+                        disabled={isGenerating || generatingAll || generatingRange}
                         className="flex shrink-0 items-center gap-1.5 rounded-full border border-border px-3 py-1 text-xs font-medium text-muted transition-colors hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         {isGenerating ? (
