@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { LayoutGrid, LogOut, ShieldCheck, Upload } from "lucide-react";
@@ -7,6 +8,14 @@ import { LayoutGrid, LogOut, ShieldCheck, Upload } from "lucide-react";
 export default function Nav() {
   const pathname = usePathname();
   const router = useRouter();
+  const [displayName, setDisplayName] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/me")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => setDisplayName(data?.user?.displayName ?? null))
+      .catch(() => setDisplayName(null));
+  }, []);
 
   async function handleLogout() {
     await fetch("/api/logout", { method: "POST" });
@@ -44,13 +53,18 @@ export default function Nav() {
             </Link>
           </div>
         </div>
-        <button
-          onClick={handleLogout}
-          className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm text-muted transition-colors hover:bg-surface-hover hover:text-foreground"
-        >
-          <LogOut size={15} />
-          <span className="hidden sm:inline">Log out</span>
-        </button>
+        <div className="flex items-center gap-3">
+          {displayName && (
+            <span className="hidden text-sm text-muted sm:inline">{displayName}</span>
+          )}
+          <button
+            onClick={handleLogout}
+            className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm text-muted transition-colors hover:bg-surface-hover hover:text-foreground"
+          >
+            <LogOut size={15} />
+            <span className="hidden sm:inline">Log out</span>
+          </button>
+        </div>
       </div>
     </nav>
   );

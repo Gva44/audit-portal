@@ -1,15 +1,15 @@
 import { sql } from "./db";
 import { generateEmbedding, toVectorLiteral } from "./embeddings";
 import { getGemini } from "./gemini";
+import { getDeepSeek, DEEPSEEK_MODEL } from "./deepseek";
 import { parseDocxTable, parseXlsxTable, toQuestionRows } from "./questionnaire-table";
 import { XLSX_MIME } from "./extract";
 
 const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
-// Question extraction and answer generation both use Gemini (already funded/working in
-// this app). DeepSeek was the original plan for this step and is a fine swap later —
-// see src/lib/deepseek.ts — but its API needs a paid balance with no free tier, so this
-// runs on Gemini for now to avoid a hard dependency on that top-up.
+// Question extraction (a rarely-used fallback — most questionnaires parse structurally
+// with zero AI calls, see parseAndSaveQuestions below) stays on Gemini. Answer generation
+// (the actual per-question DeepSeek generation) runs on DeepSeek instead — see generateJsonDeepSeek.
 const GENERATION_MODEL = "gemini-flash-latest";
 
 async function generateJson<T>(systemInstruction: string, userContent: string): Promise<T> {
@@ -20,6 +20,24 @@ async function generateJson<T>(systemInstruction: string, userContent: string): 
   });
   const content = response.text;
   if (!content) throw new Error("Gemini returned an empty response");
+  return JSON.parse(content) as T;
+}
+
+// DeepSeek's JSON mode requires the word "json" in the prompt (already present in every
+// systemInstruction below) and has no structured-output schema like Gemini's, so this
+// just parses whatever valid JSON comes back.
+async function generateJsonDeepSeek<T>(systemInstruction: string, userContent: string): Promise<T> {
+  const response = await getDeepSeek().chat.completions.create({
+    model: DEEPSEEK_MODEL,
+    messages: [
+      { role: "system", content: systemInstruction },
+      { role: "user", content: userContent },
+    ],
+    response_format: { type: "json_object" },
+    max_tokens: 2048,
+  });
+  const content = response.choices[0]?.message?.content;
+  if (!content) throw new Error("DeepSeek returned an empty response");
   return JSON.parse(content) as T;
 }
 
@@ -239,7 +257,7 @@ export async function generateAnswer(
     .filter(Boolean)
     .join("\n\n");
 
-  const parsed = await generateJson<{
+  const parsed = await generateJsonDeepSeek<{
     response?: unknown;
     comments?: unknown;
     confidenceLevel?: unknown;

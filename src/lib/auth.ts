@@ -9,6 +9,12 @@ function bufToHex(buf: ArrayBuffer): string {
     .join("");
 }
 
+function hexToBuf(hex: string): ArrayBuffer {
+  const bytes = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < bytes.length; i++) bytes[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+  return bytes.buffer;
+}
+
 async function hmac(value: string): Promise<string> {
   const secret = process.env.APP_SECRET;
   if (!secret) throw new Error("APP_SECRET environment variable is not set");
@@ -31,20 +37,45 @@ function timingSafeEqualStr(a: string, b: string): boolean {
 }
 
 export const AUTH_COOKIE = "audit_portal_auth";
-const SESSION_VALUE = "authenticated-session";
 
-export function checkPassword(password: string): boolean {
-  const expected = process.env.APP_PASSWORD;
-  if (!expected) throw new Error("APP_PASSWORD environment variable is not set");
-  return timingSafeEqualStr(password, expected);
+// Session token is "<username>.<hmac(username)>" — self-contained and verifiable without
+// a database round trip (needed since proxy.ts runs on every request in the Edge runtime).
+export async function createSessionToken(username: string): Promise<string> {
+  return `${username}.${await hmac(username)}`;
 }
 
-export async function createSessionToken(): Promise<string> {
-  return hmac(SESSION_VALUE);
+// Returns the signed-in username, or null if the token is missing/invalid.
+export async function verifySessionToken(token: string | null | undefined): Promise<string | null> {
+  if (!token) return null;
+  const dot = token.lastIndexOf(".");
+  if (dot < 0) return null;
+  const username = token.slice(0, dot);
+  const signature = token.slice(dot + 1);
+  const expected = await hmac(username);
+  return timingSafeEqualStr(signature, expected) ? username : null;
 }
 
-export async function isValidSessionToken(token: string | null | undefined): Promise<boolean> {
-  if (!token) return false;
-  const expected = await hmac(SESSION_VALUE);
-  return timingSafeEqualStr(token, expected);
+// PBKDF2-SHA256, matching scripts/add-user.mjs's Node `crypto.pbkdf2Sync` call exactly
+// (same iteration count, hash, and derived key length) so hashes made by either are
+// interchangeable. Stored as "<salt-hex>:<hash-hex>".
+export const PBKDF2_ITERATIONS = 100_000;
+const PBKDF2_KEY_LENGTH_BITS = 256;
+
+async function derivePbkdf2Hex(password: string, saltHex: string): Promise<string> {
+  const keyMaterial = await crypto.subtle.importKey("raw", encoder.encode(password), "PBKDF2", false, [
+    "deriveBits",
+  ]);
+  const bits = await crypto.subtle.deriveBits(
+    { name: "PBKDF2", salt: hexToBuf(saltHex), iterations: PBKDF2_ITERATIONS, hash: "SHA-256" },
+    keyMaterial,
+    PBKDF2_KEY_LENGTH_BITS
+  );
+  return bufToHex(bits);
+}
+
+export async function verifyPassword(password: string, storedHash: string): Promise<boolean> {
+  const [saltHex, hashHex] = storedHash.split(":");
+  if (!saltHex || !hashHex) return false;
+  const computed = await derivePbkdf2Hex(password, saltHex);
+  return timingSafeEqualStr(computed, hashHex);
 }

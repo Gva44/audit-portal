@@ -19,6 +19,6 @@ export function getDeepSeek(): OpenAI {
 }
 
 // Verify this is still current at https://api-docs.deepseek.com/quick_start/pricing
-// before going live. deepseek-v4-flash is the cheap/fast tier; deepseek-v4-pro is
+// before going live. deepseek-flash is the cheap/fast tier; deepseek-v4-pro is
 // available if answer quality on complex questionnaires needs it.
-export const DEEPSEEK_MODEL = "deepseek-v4-flash";
+export const DEEPSEEK_MODEL = "deepseek-flash";

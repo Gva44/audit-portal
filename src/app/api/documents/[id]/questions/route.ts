@@ -8,10 +8,12 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
            q.response_value, q.confidence_level, q.confidence_score, q.suggested_action,
            q.prior_question_id, prior.question_text as prior_question_text,
            prior_doc.filename as prior_document_filename,
+           q.generated_by, generated_by_user.display_name as generated_by_display_name,
            q.answer_status, q.answer_error, q.created_at
     from questions q
     left join questions prior on prior.id = q.prior_question_id
     left join documents prior_doc on prior_doc.id = prior.document_id
+    left join users generated_by_user on generated_by_user.username = q.generated_by
     where q.document_id = ${id}
     order by q.position asc
   `;

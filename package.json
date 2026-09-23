@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "db:init": "node scripts/init-db.mjs"
+    "db:init": "node scripts/init-db.mjs",
+    "user:add": "node scripts/add-user.mjs"
   },
   "dependencies": {
     "@google/genai": "^2.18.0",

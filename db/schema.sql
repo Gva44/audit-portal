@@ -83,6 +83,23 @@ alter table questions add column if not exists embedding vector(768);
 -- was used as reference context when generating this one, if a close-enough match existed.
 alter table questions add column if not exists prior_question_id uuid references questions(id);
 
+-- Named logins for the small set of people sharing this portal. Everyone sees the same
+-- data (documents, questions, answers) regardless of who's logged in — this exists purely
+-- so AI generation can be attributed to a person (see questions.generated_by below), not
+-- for access control. Passwords are PBKDF2-SHA256 hashed, "<salt-hex>:<hash-hex>" (see
+-- src/lib/auth.ts); add users with `npm run user:add -- <username> "<Display Name>"`.
+create table if not exists users (
+  id uuid primary key default gen_random_uuid(),
+  username text not null unique,
+  display_name text not null,
+  password_hash text not null,
+  created_at timestamptz not null default now()
+);
+
+-- Who generated (or last regenerated) this question's answer, for usage/credit tracking.
+-- Null for questions that have never had an answer generated.
+alter table questions add column if not exists generated_by text references users(username);
+
 create index if not exists questions_document_id_idx on questions (document_id);
 
 create index if not exists questions_embedding_idx on questions

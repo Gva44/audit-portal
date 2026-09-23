@@ -2,9 +2,10 @@
 
 import { FormEvent, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Eye, EyeOff, Lock, ShieldCheck } from "lucide-react";
+import { Eye, EyeOff, Lock, ShieldCheck, User } from "lucide-react";
 
 export default function LoginForm() {
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -19,11 +20,11 @@ export default function LoginForm() {
     const res = await fetch("/api/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ password }),
+      body: JSON.stringify({ username, password }),
     });
     setLoading(false);
     if (!res.ok) {
-      setError("Incorrect password");
+      setError("Incorrect username or password");
       return;
     }
     const next = searchParams.get("next") || "/library";
@@ -40,7 +41,23 @@ export default function LoginForm() {
         <ShieldCheck size={20} strokeWidth={2.25} />
       </span>
       <h1 className="mb-1 text-lg font-semibold tracking-tight text-foreground">Audit Portal</h1>
-      <p className="mb-6 text-sm text-muted">Enter the access password to continue.</p>
+      <p className="mb-6 text-sm text-muted">Sign in with your username to continue.</p>
+      <div className="relative mb-3">
+        <User
+          size={15}
+          className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-2"
+        />
+        <input
+          type="text"
+          autoFocus
+          autoCapitalize="off"
+          autoCorrect="off"
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+          placeholder="Username"
+          className="w-full rounded-lg border border-border bg-background py-2.5 pl-10 pr-3.5 text-sm text-foreground outline-none transition-colors placeholder:text-muted-2 focus:border-accent"
+        />
+      </div>
       <div className="relative mb-3">
         <Lock
           size={15}
@@ -48,7 +65,6 @@ export default function LoginForm() {
         />
         <input
           type={showPassword ? "text" : "password"}
-          autoFocus
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           placeholder="Password"
@@ -66,7 +82,7 @@ export default function LoginForm() {
       {error && <p className="mb-3 text-sm text-danger">{error}</p>}
       <button
         type="submit"
-        disabled={loading || !password}
+        disabled={loading || !username || !password}
         className="w-full rounded-lg bg-accent px-3.5 py-2.5 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
       >
         {loading ? "Signing in..." : "Sign in"}
