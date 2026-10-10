@@ -123,7 +123,7 @@ export default function AdminPage() {
     "w-full rounded-lg border border-border bg-background px-3.5 py-2.5 text-sm text-foreground outline-none transition-colors placeholder:text-muted-2 focus:border-accent";
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background md:pl-[232px]">
       <Nav />
       <main className="mx-auto max-w-3xl px-6 py-12">
         <h1 className="mb-1 text-2xl font-semibold tracking-tight text-foreground">Admin</h1>

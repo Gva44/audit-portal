@@ -5,7 +5,6 @@ import Link from "next/link";
 import Nav from "@/components/Nav";
 import {
   AlertTriangle,
-  ArrowLeft,
   ChevronDown,
   ClipboardCheck,
   Download,
@@ -368,7 +367,7 @@ export default function QuestionnairePage({ params }: { params: Promise<{ id: st
     { value: "needs_review", label: "Needs review", count: needsReviewCount },
     { value: "pending", label: "Pending", count: pendingCount },
     { value: "answered", label: "Answered", count: answeredCount },
-    ...(doc?.client_id && hasComparison
+    ...(doc?.client_id && hasComparison && comparisonCounts.same + comparisonCounts.reworded + comparisonCounts.changed > 0
       ? [{ value: "differs" as StatusFilter, label: "Different from last time", count: differsCount }]
       : []),
   ];
@@ -387,52 +386,62 @@ export default function QuestionnairePage({ params }: { params: Promise<{ id: st
     "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-accent";
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background md:pl-[232px]">
       <Nav />
-      <main className="mx-auto max-w-3xl px-6 py-12">
-        <Link
-          href="/library"
-          className="mb-4 inline-flex items-center gap-1.5 text-sm text-muted transition-colors hover:text-foreground"
-        >
-          <ArrowLeft size={14} />
-          Back to library
-        </Link>
+      <main className="mx-auto flex max-w-4xl flex-col gap-6 px-6 py-8 md:px-12">
+        <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-[13px] text-muted">
+          <Link href="/library" className="transition-colors hover:text-foreground">
+            Library
+          </Link>
+          <span className="text-muted-2">/</span>
+          <span>{doc?.client_name ?? "General"}</span>
+          <span className="text-muted-2">/</span>
+          <span className="truncate font-semibold text-foreground">{doc?.filename ?? ""}</span>
+        </nav>
 
         {loading && <p className="text-sm text-muted">Loading...</p>}
 
         {!loading && doc && (
           <>
-            <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <header className="flex flex-wrap items-start justify-between gap-5">
               <div className="min-w-0">
-                <h1 className="truncate text-2xl font-semibold tracking-tight text-foreground">{doc.filename}</h1>
-                <p className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted">
+                <div className="flex flex-wrap items-center gap-3">
+                  <h1 className="truncate text-[28px] font-bold tracking-tight text-foreground">{doc.filename}</h1>
                   <span
-                    className={`rounded-full border px-2 py-0.5 text-xs font-medium ${
-                      doc.client_name
-                        ? "border-success-border bg-success-soft text-success"
-                        : "border-neutral-border bg-surface-hover text-muted"
+                    className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                      doc.client_name ? "bg-success-soft text-success" : "bg-surface-hover text-muted"
                     }`}
                   >
                     {doc.client_name ?? "General"}
                   </span>
-                  {answeredCount} of {questions.length} questions answered
-                </p>
+                </div>
+                <div className="mt-3.5 flex items-center gap-3">
+                  <div className="h-1.5 w-56 overflow-hidden rounded-full bg-border">
+                    <div
+                      className="h-full rounded-full bg-accent transition-all"
+                      style={{ width: `${questions.length ? (answeredCount / questions.length) * 100 : 0}%` }}
+                    />
+                  </div>
+                  <span className="text-sm text-muted">
+                    {answeredCount} of {questions.length} answered
+                  </span>
+                </div>
               </div>
-              <div className="flex shrink-0 flex-wrap gap-2">
+              <div className="flex flex-wrap gap-2">
                 <a
                   href={`/api/documents/${id}/report`}
                   title="Internal report for the IT team: scores, last-time comparison, recommendations"
-                  className="flex items-center justify-center gap-2 rounded-lg border border-border bg-surface px-3.5 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-surface-hover"
+                  className="flex items-center gap-2 rounded-[10px] border border-border bg-surface px-3.5 py-2.5 text-sm font-semibold text-foreground transition-colors hover:bg-surface-hover"
                 >
-                  <ClipboardCheck size={16} />
+                  <ClipboardCheck size={15} />
                   IT review report
                 </a>
                 <a
                   href={`/api/documents/${id}/export`}
-                  title="The client's file with our answers filled in"
-                  className="flex items-center justify-center gap-2 rounded-lg border border-border bg-surface px-3.5 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-surface-hover"
+                  title="The client file with our answers filled in"
+                  className="flex items-center gap-2 rounded-[10px] border border-border bg-surface px-3.5 py-2.5 text-sm font-semibold text-foreground transition-colors hover:bg-surface-hover"
                 >
-                  <Download size={16} />
+                  <Download size={15} />
                   Client file
                 </a>
                 <button
@@ -443,71 +452,98 @@ export default function QuestionnairePage({ params }: { params: Promise<{ id: st
                     questions.length === 0 ||
                     questions.every((q) => q.answer_status === "ok")
                   }
-                  className="flex items-center justify-center gap-2 rounded-lg bg-accent px-3.5 py-2.5 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
+                  className="flex items-center gap-2 rounded-[10px] bg-foreground px-4 py-2.5 text-sm font-semibold text-surface transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  {generatingAll ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
+                  {generatingAll ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />}
                   {generatingAll ? "Generating..." : "Generate all answers"}
                 </button>
               </div>
-            </div>
+            </header>
 
-            {doc.client_id && (comparing || hasComparison || compareError) && (
-              <div className="mb-4 rounded-xl border border-border bg-surface p-4 shadow-card">
-                <div className="mb-2 flex items-center justify-between gap-2">
-                  <p className="flex items-center gap-1.5 text-sm font-medium text-foreground">
-                    <History size={14} />
-                    Compared with {doc.client_name}&apos;s previous questionnaires
-                  </p>
-                  <button
-                    onClick={() => {
-                      compareStarted.current = true;
-                      runCompare();
-                    }}
-                    disabled={comparing}
-                    className="flex items-center gap-1.5 rounded-full border border-border px-2.5 py-1 text-xs font-medium text-muted transition-colors hover:bg-surface-hover disabled:opacity-50"
-                  >
-                    {comparing ? <Loader2 size={12} className="animate-spin" /> : <RotateCcw size={12} />}
-                    {comparing ? "Comparing..." : "Compare again"}
-                  </button>
-                </div>
-                {hasComparison && comparisonCounts.same + comparisonCounts.reworded + comparisonCounts.changed > 0 ? (
-                  <div className="flex flex-wrap gap-1.5">
-                    {(["same", "reworded", "changed", "new"] as ComparisonStatus[]).map((s) => (
-                      <span
-                        key={s}
-                        className={`rounded-full px-2.5 py-1 text-xs font-medium ${COMPARISON_LABEL[s].classes}`}
-                      >
-                        {comparisonCounts[s]} {COMPARISON_LABEL[s].label.toLowerCase()}
-                      </span>
-                    ))}
+            {(answeredCount > 0 || (doc.client_id && (comparing || hasComparison || compareError))) && (
+              <section className="flex flex-wrap gap-4">
+                {answeredCount > 0 && (
+                  <div className="min-w-[280px] flex-1 rounded-[14px] border border-border bg-surface p-5">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-2">Readiness</p>
+                    <div className="my-3.5 flex h-2 gap-0.5 overflow-hidden rounded-full bg-border">
+                      <div className="bg-[#2f9e6b]" style={{ flex: bandCounts.ready }} />
+                      <div className="bg-[#e0a02b]" style={{ flex: bandCounts.update }} />
+                      <div className="bg-[#d9534f]" style={{ flex: bandCounts.recheck }} />
+                    </div>
+                    <div className="flex flex-wrap gap-5">
+                      {[
+                        { n: bandCounts.ready, label: "Ready · 8–10" },
+                        { n: bandCounts.update, label: "Update · 5–7" },
+                        { n: bandCounts.recheck, label: "Recheck · 0–4" },
+                      ].map((band) => (
+                        <div key={band.label}>
+                          <p className="text-[22px] font-bold tracking-tight text-foreground">{band.n}</p>
+                          <p className="text-[13px] text-muted">{band.label}</p>
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                ) : (
-                  hasComparison && (
-                    <p className="text-xs text-muted">
-                      No earlier answered questionnaire for this client to compare against yet — every question is new.
-                    </p>
-                  )
                 )}
-                {compareError && <p className="mt-2 text-xs text-danger">{compareError}</p>}
-              </div>
-            )}
-
-            {answeredCount > 0 && (
-              <div className="mb-4 flex flex-wrap gap-1.5">
-                <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${scoreBand(9).classes}`}>
-                  {bandCounts.ready} ready (8-10)
-                </span>
-                <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${scoreBand(6).classes}`}>
-                  {bandCounts.update} to update (5-7)
-                </span>
-                <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${scoreBand(2).classes}`}>
-                  {bandCounts.recheck} to recheck (0-4)
-                </span>
-              </div>
+                {doc.client_id && (comparing || hasComparison || compareError) && (
+                  <div className="min-w-[280px] flex-1 rounded-[14px] border border-border bg-surface p-5">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-2">
+                        Compared with last time
+                      </p>
+                      <button
+                        onClick={() => {
+                          compareStarted.current = true;
+                          runCompare();
+                        }}
+                        disabled={comparing}
+                        className="flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium text-muted transition-colors hover:bg-surface-hover disabled:opacity-50"
+                      >
+                        {comparing ? <Loader2 size={12} className="animate-spin" /> : <RotateCcw size={12} />}
+                        {comparing ? "Comparing..." : "Compare again"}
+                      </button>
+                    </div>
+                    {hasComparison && comparisonCounts.same + comparisonCounts.reworded + comparisonCounts.changed > 0 ? (
+                      <>
+                        <div className="my-3.5 flex h-2 gap-0.5 overflow-hidden rounded-full bg-border">
+                          <div className="bg-accent" style={{ flex: comparisonCounts.same }} />
+                          <div className="bg-[#7d93d6]" style={{ flex: comparisonCounts.reworded }} />
+                          <div className="bg-[#b9c5ea]" style={{ flex: comparisonCounts.changed }} />
+                          <div className="bg-[#dfe3ec]" style={{ flex: comparisonCounts.new }} />
+                        </div>
+                        <div className="flex flex-wrap gap-5">
+                          {(
+                            [
+                              ["same", "Same"],
+                              ["reworded", "Reworded"],
+                              ["changed", "Changed"],
+                              ["new", "New"],
+                            ] as [ComparisonStatus, string][]
+                          ).map(([key, label]) => (
+                            <div key={key}>
+                              <p className="text-[22px] font-bold tracking-tight text-foreground">
+                                {comparisonCounts[key]}
+                              </p>
+                              <p className="text-[13px] text-muted">{label}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </>
+                    ) : (
+                      hasComparison && (
+                        <p className="mt-3 text-sm text-muted">
+                          No earlier answered questionnaire for {doc.client_name} to compare against yet, so every
+                          question is new.
+                        </p>
+                      )
+                    )}
+                    {compareError && <p className="mt-2 text-xs text-danger">{compareError}</p>}
+                  </div>
+                )}
+              </section>
             )}
 
             {doc.column_headers && doc.column_headers.length > 0 && (
-              <div className="mb-4 rounded-xl border border-border bg-surface shadow-card">
+              <div className="rounded-[14px] border border-border bg-surface">
                 <button
                   onClick={() => setSetupOpen((v) => !v)}
                   className="flex w-full items-center justify-between px-4 py-3 text-left"
@@ -578,7 +614,7 @@ export default function QuestionnairePage({ params }: { params: Promise<{ id: st
             )}
 
             {questions.length > 0 && (
-              <div className="mb-6 flex flex-wrap items-center gap-2 rounded-xl border border-border bg-surface px-4 py-3 shadow-card">
+              <div className="flex flex-wrap items-center gap-2 rounded-[14px] border border-border bg-surface px-4 py-3">
                 <span className="text-sm text-muted">Or generate just questions</span>
                 <input
                   type="number"
@@ -610,18 +646,18 @@ export default function QuestionnairePage({ params }: { params: Promise<{ id: st
             )}
 
             {questions.length > 0 && (
-              <div className="mb-4 flex flex-wrap gap-1.5">
+              <div className="flex flex-wrap gap-1 self-start rounded-xl bg-surface-hover p-1">
                 {STATUS_FILTERS.map((f) => (
                   <button
                     key={f.value}
                     onClick={() => setStatusFilter(f.value)}
-                    className={`rounded-full border px-3 py-1.5 text-sm font-medium transition-colors ${
+                    className={`rounded-[9px] px-3.5 py-1.5 text-sm transition-colors ${
                       statusFilter === f.value
-                        ? "border-accent bg-accent-soft text-accent"
-                        : "border-border bg-surface text-muted hover:bg-surface-hover"
+                        ? "bg-surface font-semibold text-foreground shadow-[0_1px_2px_rgba(16,24,40,0.08)]"
+                        : "font-medium text-muted hover:text-foreground"
                     }`}
                   >
-                    {f.label} ({f.count})
+                    {f.label} <span className="ml-1 font-medium text-muted-2">{f.count}</span>
                   </button>
                 ))}
               </div>
@@ -651,7 +687,7 @@ export default function QuestionnairePage({ params }: { params: Promise<{ id: st
               </p>
             )}
 
-            <ul className="space-y-3">
+            <ul className="flex flex-col gap-4">
               {visibleQuestions.map((q) => {
                 const isGenerating = generatingIds.has(q.id);
                 const expectedEvidence = expectedEvidenceOf(q);
@@ -660,11 +696,11 @@ export default function QuestionnairePage({ params }: { params: Promise<{ id: st
                 const cmp = q.comparison_status ? COMPARISON_LABEL[q.comparison_status] : null;
                 const canReuse = q.prior_question_id && q.prior_answer_text;
                 return (
-                  <li key={q.id} className="rounded-xl border border-border bg-surface p-4 shadow-card">
+                  <li key={q.id} className="rounded-2xl border border-border bg-surface p-6">
                     <div className="mb-2 flex items-start justify-between gap-3">
                       <div>
-                        <p className="whitespace-pre-line text-sm font-medium text-foreground">
-                          <span className="text-muted-2">{q.position + 1}.</span> {q.question_text}
+                        <p className="whitespace-pre-line text-[15px] font-semibold leading-relaxed text-foreground">
+                          <span className="mr-2 font-mono text-xs font-medium text-muted-2">{String(q.position + 1).padStart(2, "0")}</span> {q.question_text}
                         </p>
                         {expectedEvidence && (
                           <p className="mt-1 text-xs text-muted">
@@ -688,7 +724,7 @@ export default function QuestionnairePage({ params }: { params: Promise<{ id: st
                     </div>
 
                     {q.prior_question_id && q.prior_answer_text && (
-                      <div className="mt-2 rounded-lg border border-border bg-surface-hover/50 px-3.5 py-3">
+                      <div className="mt-3 rounded-xl border border-dashed border-border-strong px-[18px] py-3.5">
                         <p className="mb-1 flex items-center gap-1.5 text-xs font-medium text-muted">
                           <History size={11} />
                           Last time
@@ -720,7 +756,7 @@ export default function QuestionnairePage({ params }: { params: Promise<{ id: st
                     )}
 
                     {q.answer_status === "ok" && q.answer_text && (
-                      <div className="mt-3 rounded-lg bg-background px-3.5 py-3">
+                      <div className="mt-4 rounded-xl bg-surface-hover px-[18px] py-4">
                         <div className="flex flex-wrap items-center gap-1.5">
                           {q.response_value && (
                             <span

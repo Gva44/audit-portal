@@ -1,22 +1,21 @@
 "use client";
 
-import { MouseEvent, useCallback, useEffect, useRef, useState } from "react";
+import { MouseEvent, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import Nav from "@/components/Nav";
 import Highlighted from "@/components/Highlighted";
 import {
   AlertTriangle,
+  ArrowRight,
   ChevronDown,
-  ClipboardList,
   ExternalLink,
-  FileCheck2,
   FileImage,
   FileSearch,
   FileText,
   FileX2,
-  LayoutGrid,
+  Plus,
   Search,
-  Sparkles,
   Trash2,
 } from "lucide-react";
 
@@ -39,27 +38,32 @@ type DocDetail = DocSummary & {
 };
 
 const CATEGORIES = [
-  { value: "", label: "All", icon: LayoutGrid },
-  { value: "policy", label: "Policy", icon: FileCheck2 },
-  { value: "evidence", label: "Evidence", icon: FileSearch },
-  { value: "questionnaire", label: "Questionnaire", icon: ClipboardList },
+  { value: "", label: "All" },
+  { value: "policy", label: "Policy" },
+  { value: "evidence", label: "Evidence" },
+  { value: "questionnaire", label: "Questionnaire" },
 ];
 
-const CATEGORY_ICON: Record<string, typeof FileCheck2> = {
-  policy: FileCheck2,
-  evidence: FileSearch,
-  questionnaire: ClipboardList,
+const CATEGORY_LABEL: Record<string, string> = {
+  policy: "Policy",
+  evidence: "Evidence",
+  questionnaire: "Questionnaire",
 };
 
-function FileTypeIcon({ mimeType }: { mimeType: string }) {
-  if (mimeType.startsWith("image/")) return <FileImage size={17} />;
+function FileTypeIcon({ doc }: { doc: DocSummary }) {
+  if (doc.category === "questionnaire") return <FileSearch size={17} />;
+  if (doc.mime_type.startsWith("image/")) return <FileImage size={17} />;
   return <FileText size={17} />;
 }
 
-export default function LibraryPage() {
+function formatDate(iso: string) {
+  return new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+}
+
+function LibraryContent() {
+  const searchParams = useSearchParams();
+  const clientFilter = searchParams.get("client") ?? "all";
   const [category, setCategory] = useState("");
-  const [clients, setClients] = useState<{ id: string; name: string }[]>([]);
-  const [clientFilter, setClientFilter] = useState("all");
   const [query, setQuery] = useState("");
   const [documents, setDocuments] = useState<DocSummary[]>([]);
   const [counts, setCounts] = useState<Record<string, number>>({});
@@ -108,13 +112,6 @@ export default function LibraryPage() {
   }, [fetchDocuments, query]);
 
   useEffect(() => {
-    fetch("/api/clients")
-      .then((r) => r.json())
-      .then((d) => setClients(d.clients ?? []))
-      .catch(() => setClients([]));
-  }, []);
-
-  useEffect(() => {
     const t = setTimeout(fetchCounts, 0);
     return () => clearTimeout(t);
   }, [fetchCounts]);
@@ -157,84 +154,58 @@ export default function LibraryPage() {
   }
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background md:pl-[232px]">
       <Nav />
-      <main className="mx-auto max-w-4xl px-6 py-12">
-        <h1 className="mb-1 text-2xl font-semibold tracking-tight text-foreground">
-          Document library
-        </h1>
-        <p className="mb-8 text-sm text-muted">
-          Browse, filter, and search policies, evidence, and questionnaires.
-        </p>
-
-        <div className="mb-4 flex items-center gap-2">
-          <label htmlFor="client-filter" className="text-sm text-muted">
-            Client
-          </label>
-          <select
-            id="client-filter"
-            value={clientFilter}
-            onChange={(e) => setClientFilter(e.target.value)}
-            className="rounded-lg border border-border bg-surface px-3 py-1.5 text-sm text-foreground outline-none transition-colors focus:border-accent"
+      <main className="mx-auto flex max-w-5xl flex-col gap-7 px-6 py-10 md:px-12">
+        <header className="flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <h1 className="text-[28px] font-bold tracking-tight text-foreground">Library</h1>
+            <p className="mt-1.5 text-muted">Policies, evidence and questionnaires, organised by client.</p>
+          </div>
+          <Link
+            href="/upload"
+            className="flex items-center gap-2 rounded-[10px] bg-foreground px-4 py-2.5 text-sm font-semibold text-surface transition-opacity hover:opacity-90"
           >
-            <option value="all">All clients</option>
-            <option value="general">General only</option>
-            {clients.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-        </div>
+            <Plus size={15} strokeWidth={2.2} />
+            Upload document
+          </Link>
+        </header>
 
-        <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex flex-wrap gap-1.5">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex flex-wrap gap-1 rounded-xl bg-surface-hover p-1">
             {CATEGORIES.map((c) => {
-              const Icon = c.icon;
               const selected = category === c.value;
               const count = counts[c.value];
               return (
                 <button
                   key={c.value}
                   onClick={() => setCategory(c.value)}
-                  className={`flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-sm font-medium transition-colors ${
+                  className={`rounded-[9px] px-3.5 py-1.5 text-sm transition-colors ${
                     selected
-                      ? "border-accent bg-accent-soft text-accent"
-                      : "border-border bg-surface text-muted hover:bg-surface-hover"
+                      ? "bg-surface font-semibold text-foreground shadow-[0_1px_2px_rgba(16,24,40,0.08)]"
+                      : "font-medium text-muted hover:text-foreground"
                   }`}
                 >
-                  <Icon size={14} />
                   {c.label}
-                  {typeof count === "number" && (
-                    <span
-                      className={`text-xs ${selected ? "text-accent" : "text-muted-2"}`}
-                    >
-                      {count}
-                    </span>
-                  )}
+                  {typeof count === "number" && <span className="ml-1.5 font-medium text-muted-2">{count}</span>}
                 </button>
               );
             })}
           </div>
-          <div className="relative sm:w-72">
-            <Search
-              size={15}
-              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-2"
-            />
+          <label className="flex max-w-[340px] min-w-[260px] flex-1 items-center gap-2.5 rounded-[10px] border border-border bg-surface px-3.5 py-2.5 text-muted-2 focus-within:border-accent">
+            <Search size={15} />
             <input
               ref={searchInputRef}
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search keyword or meaning..."
-              className="w-full rounded-full border border-border bg-surface py-2 pl-9 pr-11 text-sm text-foreground outline-none transition-colors placeholder:text-muted-2 focus:border-accent"
+              placeholder="Search by keyword or meaning"
+              className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-2"
             />
             {!query && (
-              <kbd className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 rounded border border-border bg-surface-hover px-1.5 py-0.5 text-[10px] font-medium text-muted-2">
-                ⌘K
-              </kbd>
+              <kbd className="rounded-md border border-border px-1.5 py-0.5 font-mono text-[11px] text-muted-2">⌘K</kbd>
             )}
-          </div>
+          </label>
         </div>
 
         {loading && (
@@ -252,130 +223,160 @@ export default function LibraryPage() {
             </span>
             <p className="text-sm font-medium text-foreground">No documents found</p>
             <p className="mt-1 text-sm text-muted">
-              {query || category ? "Try a different search or filter." : "Upload your first document to get started."}
+              {query || category || clientFilter !== "all"
+                ? "Try a different search or filter."
+                : "Upload your first document to get started."}
             </p>
           </div>
         )}
 
-        <ul className="space-y-2">
-          {documents.map((doc) => {
-            const CategoryIcon = CATEGORY_ICON[doc.category] ?? FileCheck2;
-            const expanded = expandedId === doc.id;
-            return (
-              <li
-                key={doc.id}
-                className="overflow-hidden rounded-xl border border-border bg-surface shadow-card transition-colors hover:border-border-strong"
-              >
-                <div
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => toggleExpand(doc.id)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault();
-                      toggleExpand(doc.id);
-                    }
-                  }}
-                  className="flex w-full cursor-pointer items-start gap-3 px-4 py-3.5 text-left"
-                >
-                  <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent-soft text-accent">
-                    <FileTypeIcon mimeType={doc.mime_type} />
-                  </span>
-
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="truncate text-sm font-medium text-foreground">{doc.filename}</span>
-                      <span className="flex shrink-0 items-center gap-1 rounded-full bg-surface-hover px-2 py-0.5 text-xs font-medium text-muted">
-                        <CategoryIcon size={11} />
-                        {doc.category}
-                      </span>
-                      <span
-                        className={`shrink-0 rounded-full border px-2 py-0.5 text-xs font-medium ${
-                          doc.client_name
-                            ? "border-success-border bg-success-soft text-success"
-                            : "border-neutral-border bg-surface-hover text-muted"
-                        }`}
-                      >
-                        {doc.client_name ?? "General"}
-                      </span>
-                      {doc.extraction_status === "failed" && (
-                        <span className="flex shrink-0 items-center gap-1 rounded-full border border-danger-border bg-danger-soft px-2 py-0.5 text-xs font-medium text-danger">
-                          <AlertTriangle size={11} />
-                          extraction failed
+        {!loading && documents.length > 0 && (
+          <div className="overflow-hidden rounded-[14px] border border-border bg-surface">
+            <div className="hidden items-center gap-4 border-b border-border bg-surface-hover px-5 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-2 sm:flex">
+              <span className="flex-1">Document</span>
+              <span className="w-24">Client</span>
+              <span className="w-28">Type</span>
+              <span className="w-24 text-right">Added</span>
+              <span className="w-[176px]" />
+            </div>
+            <ul className="divide-y divide-border">
+              {documents.map((doc) => {
+                const expanded = expandedId === doc.id;
+                return (
+                  <li key={doc.id}>
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => toggleExpand(doc.id)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          toggleExpand(doc.id);
+                        }
+                      }}
+                      className="flex cursor-pointer flex-wrap items-center gap-x-4 gap-y-2 px-5 py-4 transition-colors hover:bg-surface-hover/60"
+                    >
+                      <div className="flex min-w-0 flex-1 basis-64 items-center gap-3.5">
+                        <span
+                          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] ${
+                            doc.category === "questionnaire"
+                              ? "bg-accent-soft text-accent"
+                              : "bg-surface-hover text-muted"
+                          }`}
+                        >
+                          <FileTypeIcon doc={doc} />
                         </span>
-                      )}
+                        <div className="min-w-0">
+                          <p className="truncate font-semibold text-foreground">{doc.filename}</p>
+                          {doc.snippet ? (
+                            <p className="mt-0.5 line-clamp-1 text-[13px] text-muted">
+                              <Highlighted text={doc.snippet} />
+                            </p>
+                          ) : (
+                            <p className="mt-0.5 flex items-center gap-1.5 text-[13px] text-muted">
+                              {doc.extraction_status === "failed" ? (
+                                <span className="flex items-center gap-1 text-danger">
+                                  <AlertTriangle size={12} />
+                                  Extraction failed
+                                </span>
+                              ) : (
+                                (doc.notes ?? "Text extracted")
+                              )}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      <span className="w-24">
+                        <span
+                          className={`inline-block max-w-full truncate rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                            doc.client_name ? "bg-success-soft text-success" : "bg-surface-hover text-muted"
+                          }`}
+                        >
+                          {doc.client_name ?? "General"}
+                        </span>
+                      </span>
+                      <span className="w-28 text-sm text-muted">{CATEGORY_LABEL[doc.category] ?? doc.category}</span>
+                      <span className="w-24 text-right text-sm text-muted">{formatDate(doc.created_at)}</span>
+
+                      <div className="flex w-[176px] shrink-0 items-center justify-end gap-0.5">
+                        {doc.category === "questionnaire" && (
+                          <Link
+                            href={`/questionnaires/${doc.id}`}
+                            onClick={(e) => e.stopPropagation()}
+                            className="mr-1 flex items-center gap-1.5 rounded-[9px] bg-accent px-3 py-1.5 text-[13px] font-semibold text-accent-foreground transition-colors hover:bg-accent-hover"
+                          >
+                            Answer
+                            <ArrowRight size={13} strokeWidth={2.2} />
+                          </Link>
+                        )}
+                        <a
+                          href={`/api/documents/${doc.id}/file`}
+                          target="_blank"
+                          rel="noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          title="Open original file"
+                          className="rounded-lg p-2 text-muted transition-colors hover:bg-surface-hover hover:text-accent"
+                        >
+                          <ExternalLink size={15} />
+                        </a>
+                        <button
+                          onClick={(e) => handleDelete(doc.id, e)}
+                          title="Delete document"
+                          className="rounded-lg p-2 text-muted transition-colors hover:bg-danger-soft hover:text-danger"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                        <ChevronDown
+                          size={15}
+                          className={`ml-0.5 text-muted-2 transition-transform ${expanded ? "rotate-180" : ""}`}
+                        />
+                      </div>
                     </div>
-                    {doc.notes && <p className="mt-1 truncate text-xs text-muted">{doc.notes}</p>}
-                    {doc.snippet && (
-                      <p className="mt-1 line-clamp-2 text-xs text-muted">
-                        <Highlighted text={doc.snippet} />
-                      </p>
-                    )}
-                    <p className="mt-1 text-xs text-muted-2">{new Date(doc.created_at).toLocaleString()}</p>
-                  </div>
 
-                  <div className="flex shrink-0 items-center gap-1">
-                    {doc.category === "questionnaire" && (
-                      <Link
-                        href={`/questionnaires/${doc.id}`}
-                        onClick={(e) => e.stopPropagation()}
-                        className="flex items-center gap-1.5 rounded-full bg-accent px-3 py-1.5 text-xs font-medium text-accent-foreground transition-colors hover:bg-accent-hover"
-                      >
-                        <Sparkles size={13} />
-                        Answer questions
-                      </Link>
+                    {expanded && (
+                      <div className="border-t border-border bg-background px-5 py-4">
+                        {expandedLoading && <p className="text-xs text-muted">Loading extracted text...</p>}
+                        {!expandedLoading && expandedDoc?.extraction_status === "failed" && (
+                          <p className="flex items-center gap-1.5 text-xs text-danger">
+                            <AlertTriangle size={13} />
+                            Extraction failed: {expandedDoc.extraction_error}
+                          </p>
+                        )}
+                        {!expandedLoading && expandedDoc?.extracted_text && (
+                          <pre className="max-h-80 overflow-auto whitespace-pre-wrap font-sans text-xs leading-relaxed text-foreground">
+                            {expandedDoc.extracted_text}
+                          </pre>
+                        )}
+                        {!expandedLoading &&
+                          expandedDoc &&
+                          !expandedDoc.extracted_text &&
+                          expandedDoc.extraction_status === "ok" && (
+                            <p className="text-xs text-muted">No text extracted.</p>
+                          )}
+                      </div>
                     )}
-                    <a
-                      href={`/api/documents/${doc.id}/file`}
-                      target="_blank"
-                      rel="noreferrer"
-                      onClick={(e) => e.stopPropagation()}
-                      title="Open original file"
-                      className="rounded-lg p-2 text-muted transition-colors hover:bg-surface-hover hover:text-accent"
-                    >
-                      <ExternalLink size={15} />
-                    </a>
-                    <button
-                      onClick={(e) => handleDelete(doc.id, e)}
-                      title="Delete document"
-                      className="rounded-lg p-2 text-muted transition-colors hover:bg-danger-soft hover:text-danger"
-                    >
-                      <Trash2 size={15} />
-                    </button>
-                    <ChevronDown
-                      size={16}
-                      className={`ml-1 text-muted-2 transition-transform ${expanded ? "rotate-180" : ""}`}
-                    />
-                  </div>
-                </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        )}
 
-                {expanded && (
-                  <div className="border-t border-border bg-background/60 px-4 py-3.5">
-                    {expandedLoading && <p className="text-xs text-muted">Loading extracted text...</p>}
-                    {!expandedLoading && expandedDoc?.extraction_status === "failed" && (
-                      <p className="flex items-center gap-1.5 text-xs text-danger">
-                        <AlertTriangle size={13} />
-                        Extraction failed: {expandedDoc.extraction_error}
-                      </p>
-                    )}
-                    {!expandedLoading && expandedDoc?.extracted_text && (
-                      <pre className="max-h-80 overflow-auto whitespace-pre-wrap font-sans text-xs leading-relaxed text-foreground">
-                        {expandedDoc.extracted_text}
-                      </pre>
-                    )}
-                    {!expandedLoading &&
-                      expandedDoc &&
-                      !expandedDoc.extracted_text &&
-                      expandedDoc.extraction_status === "ok" && (
-                        <p className="text-xs text-muted">No text extracted.</p>
-                      )}
-                  </div>
-                )}
-              </li>
-            );
-          })}
-        </ul>
+        {!loading && documents.length > 0 && (
+          <p className="text-[13px] text-muted-2">
+            Showing {documents.length} of {counts[""] ?? documents.length} documents
+          </p>
+        )}
       </main>
     </div>
+  );
+}
+
+export default function LibraryPage() {
+  return (
+    <Suspense fallback={null}>
+      <LibraryContent />
+    </Suspense>
   );
 }

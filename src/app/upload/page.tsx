@@ -83,7 +83,7 @@ export default function UploadPage() {
   }
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background md:pl-[232px]">
       <Nav />
       <main className="mx-auto max-w-2xl px-6 py-12">
         <h1 className="mb-1 text-2xl font-semibold tracking-tight text-foreground">
