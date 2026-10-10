@@ -6,6 +6,7 @@ import Nav from "@/components/Nav";
 import {
   AlertTriangle,
   ChevronDown,
+  CheckCircle2,
   ClipboardCheck,
   Download,
   ExternalLink,
@@ -149,6 +150,9 @@ export default function QuestionnairePage({ params }: { params: Promise<{ id: st
   const [rereading, setRereading] = useState(false);
   const [setupError, setSetupError] = useState<string | null>(null);
   const compareStarted = useRef(false);
+  const stopRequested = useRef(false);
+  const [stopping, setStopping] = useState(false);
+  const [batch, setBatch] = useState<{ done: number; total: number; failed: number } | null>(null);
 
   const fetchQuestionsOnly = useCallback(async () => {
     const res = await fetch(`/api/documents/${id}/questions`);
@@ -217,14 +221,17 @@ export default function QuestionnairePage({ params }: { params: Promise<{ id: st
     return () => clearTimeout(t);
   }, [loading, doc, questions, runCompare]);
 
-  async function generateOne(questionId: string) {
+  async function generateOne(questionId: string): Promise<boolean> {
     setGeneratingIds((prev) => new Set(prev).add(questionId));
     try {
       const res = await fetch(`/api/questions/${questionId}/answer`, { method: "POST" });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (data.question) {
         setQuestions((prev) => prev.map((q) => (q.id === questionId ? data.question : q)));
       }
+      return res.ok;
+    } catch {
+      return false;
     } finally {
       setGeneratingIds((prev) => {
         const next = new Set(prev);
@@ -306,9 +313,18 @@ export default function QuestionnairePage({ params }: { params: Promise<{ id: st
   }
 
   async function generateBatch(ids: string[]) {
-    for (const questionId of ids) {
-      await generateOne(questionId);
+    stopRequested.current = false;
+    setStopping(false);
+    setBatch({ done: 0, total: ids.length, failed: 0 });
+    let failed = 0;
+    for (let i = 0; i < ids.length; i++) {
+      if (stopRequested.current) break;
+      const ok = await generateOne(ids[i]);
+      if (!ok) failed++;
+      setBatch({ done: i + 1, total: ids.length, failed });
     }
+    // Leave the final tally visible briefly so a finished run is not just a vanishing bar.
+    setTimeout(() => setBatch(null), 4000);
   }
 
   async function generateAll() {
@@ -459,6 +475,53 @@ export default function QuestionnairePage({ params }: { params: Promise<{ id: st
                 </button>
               </div>
             </header>
+
+            {batch && (
+              <div
+                className="rounded-[14px] border border-accent/30 bg-accent-soft p-5"
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={batch.total}
+                aria-valuenow={batch.done}
+              >
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <p className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                    {batch.done < batch.total && !stopping ? (
+                      <Loader2 size={15} className="animate-spin text-accent" />
+                    ) : (
+                      <CheckCircle2 size={15} className="text-success" />
+                    )}
+                    {batch.done < batch.total && !stopping
+                      ? `Answering question ${Math.min(batch.done + 1, batch.total)} of ${batch.total}`
+                      : stopping && batch.done < batch.total
+                        ? `Stopped after ${batch.done} of ${batch.total}`
+                        : `Finished ${batch.total} of ${batch.total}`}
+                  </p>
+                  {batch.done < batch.total && !stopping && (
+                    <button
+                      onClick={() => {
+                        stopRequested.current = true;
+                        setStopping(true);
+                      }}
+                      className="rounded-full border border-border bg-surface px-3 py-1 text-xs font-medium text-muted transition-colors hover:bg-surface-hover"
+                    >
+                      Stop after this one
+                    </button>
+                  )}
+                </div>
+                <div className="mt-3 h-2 overflow-hidden rounded-full bg-surface">
+                  <div
+                    className="h-full rounded-full bg-accent transition-all duration-500"
+                    style={{ width: `${(batch.done / batch.total) * 100}%` }}
+                  />
+                </div>
+                <p className="mt-2 text-xs text-muted">
+                  {batch.done} done
+                  {batch.failed > 0 && <span className="text-danger"> · {batch.failed} failed (check the error on that question)</span>}
+                  {batch.done < batch.total && !stopping && " · each answer takes a few seconds"}
+                </p>
+              </div>
+            )}
 
             {(answeredCount > 0 || (doc.client_id && (comparing || hasComparison || compareError))) && (
               <section className="flex flex-wrap gap-4">

@@ -25,7 +25,7 @@ const CATEGORIES = [
 
 type Status =
   | { type: "idle" }
-  | { type: "uploading" }
+  | { type: "uploading"; percent: number; phase: "sending" | "processing" }
   | { type: "success"; filename: string; warning?: string | null }
   | { type: "error"; message: string };
 
@@ -55,7 +55,7 @@ export default function UploadPage() {
 
   async function handleUpload() {
     if (!file) return;
-    setStatus({ type: "uploading" });
+    setStatus({ type: "uploading", percent: 0, phase: "sending" });
     try {
       const form = new FormData();
       form.set("file", file);
@@ -66,13 +66,31 @@ export default function UploadPage() {
         form.set("columnInstructions", columnInstructions.trim());
       }
 
-      const res = await fetch("/api/upload", { method: "POST", body: form });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error || "Failed to upload document");
-      }
+      // XMLHttpRequest rather than fetch: only it reports how much of the file has been sent.
+      const body = await new Promise<{ warning?: string | null }>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", "/api/upload");
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) {
+            setStatus({ type: "uploading", percent: Math.round((e.loaded / e.total) * 100), phase: "sending" });
+          }
+        };
+        // The file is fully sent; the server is now storing, reading and indexing it.
+        xhr.upload.onload = () => setStatus({ type: "uploading", percent: 100, phase: "processing" });
+        xhr.onerror = () => reject(new Error("Network error while uploading"));
+        xhr.onload = () => {
+          let parsed: { error?: string; warning?: string | null } = {};
+          try {
+            parsed = JSON.parse(xhr.responseText);
+          } catch {
+            // non-JSON error page (e.g. a platform size limit); handled below
+          }
+          if (xhr.status >= 200 && xhr.status < 300) resolve(parsed);
+          else reject(new Error(parsed.error || `Upload failed (${xhr.status})`));
+        };
+        xhr.send(form);
+      });
 
-      const body = await res.json().catch(() => ({}));
       setStatus({ type: "success", filename: file.name, warning: body.warning ?? null });
       setFile(null);
       setNotes("");
@@ -239,8 +257,29 @@ export default function UploadPage() {
             className="flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
           >
             {status.type === "uploading" && <Loader2 size={16} className="animate-spin" />}
-            {status.type === "uploading" ? "Uploading & processing..." : "Upload"}
+            {status.type === "uploading"
+              ? status.phase === "sending"
+                ? `Uploading ${status.percent}%`
+                : "Processing..."
+              : "Upload"}
           </button>
+
+          {status.type === "uploading" && (
+            <div className="mt-4" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={status.percent}>
+              <div className="h-1.5 overflow-hidden rounded-full bg-border">
+                {status.phase === "sending" ? (
+                  <div className="h-full rounded-full bg-accent transition-all" style={{ width: `${status.percent}%` }} />
+                ) : (
+                  <div className="h-full w-1/3 animate-[indeterminate_1.2s_ease-in-out_infinite] rounded-full bg-accent" />
+                )}
+              </div>
+              <p className="mt-2 text-xs text-muted">
+                {status.phase === "sending"
+                  ? "Sending the file..."
+                  : "Saving to Drive, reading the text and indexing it for search. This can take a little while for PDFs and images."}
+              </p>
+            </div>
+          )}
         </div>
 
         {status.type === "success" && (
