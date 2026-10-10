@@ -388,7 +388,7 @@ export default function QuestionnairePage({ params }: { params: Promise<{ id: st
   return (
     <div className="min-h-screen bg-background md:pl-[232px]">
       <Nav />
-      <main className="mx-auto flex max-w-4xl flex-col gap-6 px-6 py-8 md:px-12">
+      <main className="flex flex-col gap-6 px-6 py-8 md:px-12">
         <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-[13px] text-muted">
           <Link href="/library" className="transition-colors hover:text-foreground">
             Library
