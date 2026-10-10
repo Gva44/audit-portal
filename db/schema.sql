@@ -104,3 +104,40 @@ create index if not exists questions_document_id_idx on questions (document_id);
 
 create index if not exists questions_embedding_idx on questions
   using ivfflat (embedding vector_cosine_ops) with (lists = 100);
+
+-- ---------------------------------------------------------------------------------
+-- Clients: documents belong to a client, or to the shared "General" pool (client_id null).
+-- Client folders in Drive are created lazily on first upload (see src/lib/clients.ts).
+create table if not exists clients (
+  id uuid primary key default gen_random_uuid(),
+  name text not null unique,
+  drive_folder_id text,
+  created_at timestamptz not null default now()
+);
+
+alter table documents add column if not exists client_id uuid references clients(id);
+create index if not exists documents_client_id_idx on documents (client_id);
+
+-- Free-text note the uploader typed about which columns to read, and the resolved column
+-- mapping (0-based indexes; see ColumnConfig in src/lib/questionnaire-table.ts).
+alter table documents add column if not exists column_instructions text;
+alter table documents add column if not exists column_config jsonb;
+
+alter table users add column if not exists role text not null default 'user';
+do $$ begin
+  alter table users add constraint users_role_check check (role in ('admin', 'user'));
+exception when duplicate_object then null; end $$;
+
+-- 0-10 readiness score: 0-4 recheck, 5-7 partial/update, 8-10 ready.
+alter table questions add column if not exists score numeric;
+-- How this question relates to the same client's previous questionnaires.
+alter table questions add column if not exists comparison_status text;
+do $$ begin
+  alter table questions add constraint questions_comparison_status_check
+    check (comparison_status in ('same', 'reworded', 'changed', 'new'));
+exception when duplicate_object then null; end $$;
+alter table questions add column if not exists comparison_note text;
+alter table questions add column if not exists recommendation text;
+-- Whether the supporting documents were client-specific, General, or both.
+alter table questions add column if not exists source_scope text;
+alter table questions add column if not exists expected_evidence text;

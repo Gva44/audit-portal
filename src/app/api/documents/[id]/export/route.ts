@@ -1,12 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sql } from "@/lib/db";
 import { buildQuestionnaireExport } from "@/lib/questionnaire-export";
+import { fetchQuestions } from "@/lib/question-queries";
+import { toExportRows } from "@/lib/export-rows";
+import type { ColumnConfig } from "@/lib/questionnaire-table";
 
+// The client-facing file: original columns with our answers filled in, nothing internal.
 export async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
 
   const docRows = await sql`
-    select filename, category, column_headers from documents where id = ${id}
+    select filename, category, column_headers, column_config from documents where id = ${id}
   `;
   const doc = docRows[0];
   if (!doc) return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -14,28 +18,11 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
     return NextResponse.json({ error: "Document is not a questionnaire" }, { status: 400 });
   }
 
-  const questions = await sql`
-    select position, question_text, row_data, answer_text, citations,
-           response_value, confidence_level, confidence_score, suggested_action, answer_status
-    from questions
-    where document_id = ${id}
-    order by position asc
-  `;
-
+  const questions = await fetchQuestions({ documentId: id });
   const buffer = await buildQuestionnaireExport(
     (doc.column_headers as string[] | null) ?? null,
-    questions.map((q) => ({
-      position: q.position as number,
-      question_text: q.question_text as string,
-      row_data: q.row_data as Record<string, string> | null,
-      answer_text: q.answer_text as string | null,
-      citations: q.citations as { id: string; filename: string }[],
-      response_value: q.response_value as string | null,
-      confidence_level: q.confidence_level as string | null,
-      confidence_score: q.confidence_score as string | number | null,
-      suggested_action: q.suggested_action as string | null,
-      answer_status: q.answer_status as string,
-    }))
+    toExportRows(questions),
+    (doc.column_config as ColumnConfig | null) ?? null
   );
 
   const baseName = String(doc.filename).replace(/\.[^.]+$/, "");

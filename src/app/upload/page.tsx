@@ -1,6 +1,6 @@
 "use client";
 
-import { DragEvent, useCallback, useState } from "react";
+import { DragEvent, useCallback, useEffect, useState } from "react";
 import Nav from "@/components/Nav";
 import {
   AlertCircle,
@@ -26,7 +26,7 @@ const CATEGORIES = [
 type Status =
   | { type: "idle" }
   | { type: "uploading" }
-  | { type: "success"; filename: string }
+  | { type: "success"; filename: string; warning?: string | null }
   | { type: "error"; message: string };
 
 export default function UploadPage() {
@@ -34,6 +34,9 @@ export default function UploadPage() {
   const [category, setCategory] = useState("policy");
   const [notes, setNotes] = useState("");
   const [dragging, setDragging] = useState(false);
+  const [clients, setClients] = useState<{ id: string; name: string }[]>([]);
+  const [clientId, setClientId] = useState("general");
+  const [columnInstructions, setColumnInstructions] = useState("");
   const [status, setStatus] = useState<Status>({ type: "idle" });
 
   const handleDrop = useCallback((e: DragEvent<HTMLDivElement>) => {
@@ -41,6 +44,13 @@ export default function UploadPage() {
     setDragging(false);
     const dropped = e.dataTransfer.files?.[0];
     if (dropped) setFile(dropped);
+  }, []);
+
+  useEffect(() => {
+    fetch("/api/clients")
+      .then((r) => r.json())
+      .then((d) => setClients(d.clients ?? []))
+      .catch(() => setClients([]));
   }, []);
 
   async function handleUpload() {
@@ -51,6 +61,10 @@ export default function UploadPage() {
       form.set("file", file);
       form.set("category", category);
       if (notes) form.set("notes", notes);
+      form.set("clientId", clientId);
+      if (category === "questionnaire" && columnInstructions.trim()) {
+        form.set("columnInstructions", columnInstructions.trim());
+      }
 
       const res = await fetch("/api/upload", { method: "POST", body: form });
       if (!res.ok) {
@@ -58,9 +72,11 @@ export default function UploadPage() {
         throw new Error(body.error || "Failed to upload document");
       }
 
-      setStatus({ type: "success", filename: file.name });
+      const body = await res.json().catch(() => ({}));
+      setStatus({ type: "success", filename: file.name, warning: body.warning ?? null });
       setFile(null);
       setNotes("");
+      setColumnInstructions("");
     } catch (err) {
       setStatus({ type: "error", message: err instanceof Error ? err.message : "Upload failed" });
     }
@@ -125,6 +141,28 @@ export default function UploadPage() {
           </div>
 
           <div className="mb-5">
+            <label htmlFor="upload-client" className="mb-2 block text-sm font-medium text-foreground">
+              Client
+            </label>
+            <select
+              id="upload-client"
+              value={clientId}
+              onChange={(e) => setClientId(e.target.value)}
+              className="w-full rounded-lg border border-border bg-background px-3.5 py-2.5 text-sm text-foreground outline-none transition-colors focus:border-accent"
+            >
+              <option value="general">General (available to every client)</option>
+              {clients.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1.5 text-xs text-muted-2">
+              Client documents are used first when answering that client&apos;s questionnaires, then General ones.
+            </p>
+          </div>
+
+          <div className="mb-5">
             <label className="mb-2 block text-sm font-medium text-foreground">Category</label>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
               {CATEGORIES.map((c) => {
@@ -159,6 +197,25 @@ export default function UploadPage() {
             )}
           </div>
 
+          {category === "questionnaire" && (
+            <div className="mb-5">
+              <label htmlFor="column-instructions" className="mb-2 block text-sm font-medium text-foreground">
+                Which columns should be read? (optional)
+              </label>
+              <textarea
+                id="column-instructions"
+                value={columnInstructions}
+                onChange={(e) => setColumnInstructions(e.target.value)}
+                rows={2}
+                className="w-full rounded-lg border border-border bg-background px-3.5 py-2.5 text-sm text-foreground outline-none transition-colors placeholder:text-muted-2 focus:border-accent"
+                placeholder="e.g. Questions are in column C, evidence needed is in D, write the response in F and comments in G. Use the sheet called 'Section 2'."
+              />
+              <p className="mt-1.5 text-xs text-muted-2">
+                Leave blank to detect columns automatically. You can review and change the columns after uploading.
+              </p>
+            </div>
+          )}
+
           <div className="mb-7">
             <div className="mb-2 flex items-center justify-between">
               <label className="block text-sm font-medium text-foreground">Notes (optional)</label>
@@ -190,6 +247,12 @@ export default function UploadPage() {
           <p className="mt-4 flex items-center gap-2 text-sm text-success">
             <CheckCircle2 size={16} />
             Uploaded and processed &quot;{status.filename}&quot;.
+          </p>
+        )}
+        {status.type === "success" && status.warning && (
+          <p className="mt-2 flex items-center gap-2 text-sm text-warning">
+            <AlertCircle size={16} />
+            {status.warning}
           </p>
         )}
         {status.type === "error" && (

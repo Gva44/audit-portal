@@ -12,6 +12,8 @@ const HEADLINE_OPTIONS = `MaxFragments=1,MaxWords=40,MinWords=15,StartSel=${HIGH
 export async function GET(request: NextRequest) {
   const q = request.nextUrl.searchParams.get("q")?.trim();
   const category = request.nextUrl.searchParams.get("category");
+  const clientParam = request.nextUrl.searchParams.get("client");
+  const clientFilter = !clientParam || clientParam === "all" ? null : clientParam;
 
   if (!q) return NextResponse.json({ results: [] });
 
@@ -26,7 +28,8 @@ export async function GET(request: NextRequest) {
   // (1 - cosine distance). Falls back to keyword-only if embedding generation failed.
   const rows = embeddingLiteral
     ? await sql`
-        select id, filename, category, notes, mime_type, extraction_status, created_at,
+        select id, filename, category, notes, mime_type, extraction_status, created_at, client_id,
+               (select name from clients where clients.id = documents.client_id) as client_name,
                ts_headline(
                  'english', coalesce(extracted_text, ''), plainto_tsquery('english', ${q}), ${HEADLINE_OPTIONS}
                ) as snippet,
@@ -40,6 +43,11 @@ export async function GET(request: NextRequest) {
         from documents
         where (${category}::text is null or category = ${category})
           and (
+            ${clientFilter}::text is null
+            or (${clientFilter}::text = 'general' and client_id is null)
+            or client_id::text = ${clientFilter}::text
+          )
+          and (
             to_tsvector('english', coalesce(filename, '') || ' ' || coalesce(extracted_text, ''))
               @@ plainto_tsquery('english', ${q})
             or embedding is not null
@@ -48,7 +56,8 @@ export async function GET(request: NextRequest) {
         limit 25
       `
     : await sql`
-        select id, filename, category, notes, mime_type, extraction_status, created_at,
+        select id, filename, category, notes, mime_type, extraction_status, created_at, client_id,
+               (select name from clients where clients.id = documents.client_id) as client_name,
                ts_headline(
                  'english', coalesce(extracted_text, ''), plainto_tsquery('english', ${q}), ${HEADLINE_OPTIONS}
                ) as snippet,
@@ -58,6 +67,11 @@ export async function GET(request: NextRequest) {
                ) as score
         from documents
         where (${category}::text is null or category = ${category})
+          and (
+            ${clientFilter}::text is null
+            or (${clientFilter}::text = 'general' and client_id is null)
+            or client_id::text = ${clientFilter}::text
+          )
           and to_tsvector('english', coalesce(filename, '') || ' ' || coalesce(extracted_text, ''))
             @@ plainto_tsquery('english', ${q})
         order by score desc

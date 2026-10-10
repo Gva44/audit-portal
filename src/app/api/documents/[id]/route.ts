@@ -5,10 +5,12 @@ import { deleteFile } from "@/lib/drive";
 export async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const rows = await sql`
-    select id, filename, category, notes, mime_type, file_size,
-           extracted_text, extraction_status, extraction_error, created_at
-    from documents
-    where id = ${id}
+    select d.id, d.filename, d.category, d.notes, d.mime_type, d.file_size,
+           d.extracted_text, d.extraction_status, d.extraction_error, d.created_at,
+           d.client_id, c.name as client_name, d.column_headers, d.column_config, d.column_instructions
+    from documents d
+    left join clients c on c.id = d.client_id
+    where d.id = ${id}
   `;
   const document = rows[0];
   if (!document) return NextResponse.json({ error: "Not found" }, { status: 404 });

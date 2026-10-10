@@ -38,10 +38,23 @@ function getDrive(): { drive: drive_v3.Drive; folderId: string } {
 
 export type DriveUploadResult = { id: string; webViewLink: string };
 
+export async function createFolder(name: string): Promise<string> {
+  const { drive, folderId } = getDrive();
+  const res = await drive.files.create({
+    requestBody: { name, mimeType: "application/vnd.google-apps.folder", parents: [folderId] },
+    fields: "id",
+    supportsAllDrives: true,
+  });
+  if (!res.data.id) throw new Error("Drive did not return a folder id");
+  return res.data.id;
+}
+
+// parentFolderId defaults to the Shared Drive root folder (the General pool).
 export async function uploadFile(
   buffer: Buffer,
   filename: string,
-  mimeType: string
+  mimeType: string,
+  parentFolderId?: string | null
 ): Promise<DriveUploadResult> {
   const { drive, folderId } = getDrive();
 
@@ -50,7 +63,7 @@ export async function uploadFile(
   // storage is billed to the Shared Drive itself. supportsAllDrives is required for the
   // API to operate on Shared Drive content at all.
   const res = await drive.files.create({
-    requestBody: { name: filename, parents: [folderId] },
+    requestBody: { name: filename, parents: [parentFolderId || folderId] },
     media: { mimeType, body: Readable.from(buffer) },
     fields: "id, webViewLink",
     supportsAllDrives: true,

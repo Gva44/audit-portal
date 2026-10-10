@@ -3,17 +3,21 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { LayoutGrid, LogOut, ShieldCheck, Upload } from "lucide-react";
+import { LayoutGrid, LogOut, Settings, ShieldCheck, Upload } from "lucide-react";
 
 export default function Nav() {
   const pathname = usePathname();
   const router = useRouter();
   const [displayName, setDisplayName] = useState<string | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
     fetch("/api/me")
       .then((res) => (res.ok ? res.json() : null))
-      .then((data) => setDisplayName(data?.user?.displayName ?? null))
+      .then((data) => {
+        setDisplayName(data?.user?.displayName ?? null);
+        setIsAdmin(data?.user?.role === "admin");
+      })
       .catch(() => setDisplayName(null));
   }, []);
 
@@ -51,6 +55,12 @@ export default function Nav() {
               <Upload size={15} />
               Upload
             </Link>
+            {isAdmin && (
+              <Link href="/admin" className={linkClass("/admin")}>
+                <Settings size={15} />
+                Admin
+              </Link>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-3">

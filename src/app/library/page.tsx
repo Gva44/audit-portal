@@ -28,6 +28,8 @@ type DocSummary = {
   mime_type: string;
   extraction_status: string;
   created_at: string;
+  client_id: string | null;
+  client_name: string | null;
   snippet?: string;
 };
 
@@ -56,6 +58,8 @@ function FileTypeIcon({ mimeType }: { mimeType: string }) {
 
 export default function LibraryPage() {
   const [category, setCategory] = useState("");
+  const [clients, setClients] = useState<{ id: string; name: string }[]>([]);
+  const [clientFilter, setClientFilter] = useState("all");
   const [query, setQuery] = useState("");
   const [documents, setDocuments] = useState<DocSummary[]>([]);
   const [counts, setCounts] = useState<Record<string, number>>({});
@@ -70,6 +74,7 @@ export default function LibraryPage() {
     try {
       const params = new URLSearchParams();
       if (category) params.set("category", category);
+      if (clientFilter !== "all") params.set("client", clientFilter);
       if (query.trim()) {
         params.set("q", query.trim());
         const res = await fetch(`/api/search?${params.toString()}`);
@@ -83,10 +88,10 @@ export default function LibraryPage() {
     } finally {
       setLoading(false);
     }
-  }, [category, query]);
+  }, [category, query, clientFilter]);
 
   const fetchCounts = useCallback(async () => {
-    const res = await fetch(`/api/documents`);
+    const res = await fetch(clientFilter === "all" ? `/api/documents` : `/api/documents?client=${clientFilter}`);
     const data = await res.json();
     const all: DocSummary[] = data.documents ?? [];
     const next: Record<string, number> = {};
@@ -95,12 +100,19 @@ export default function LibraryPage() {
     }
     next[""] = all.length;
     setCounts(next);
-  }, []);
+  }, [clientFilter]);
 
   useEffect(() => {
     const t = setTimeout(fetchDocuments, query ? 350 : 0);
     return () => clearTimeout(t);
   }, [fetchDocuments, query]);
+
+  useEffect(() => {
+    fetch("/api/clients")
+      .then((r) => r.json())
+      .then((d) => setClients(d.clients ?? []))
+      .catch(() => setClients([]));
+  }, []);
 
   useEffect(() => {
     const t = setTimeout(fetchCounts, 0);
@@ -154,6 +166,26 @@ export default function LibraryPage() {
         <p className="mb-8 text-sm text-muted">
           Browse, filter, and search policies, evidence, and questionnaires.
         </p>
+
+        <div className="mb-4 flex items-center gap-2">
+          <label htmlFor="client-filter" className="text-sm text-muted">
+            Client
+          </label>
+          <select
+            id="client-filter"
+            value={clientFilter}
+            onChange={(e) => setClientFilter(e.target.value)}
+            className="rounded-lg border border-border bg-surface px-3 py-1.5 text-sm text-foreground outline-none transition-colors focus:border-accent"
+          >
+            <option value="all">All clients</option>
+            <option value="general">General only</option>
+            {clients.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        </div>
 
         <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex flex-wrap gap-1.5">
@@ -256,6 +288,15 @@ export default function LibraryPage() {
                       <span className="flex shrink-0 items-center gap-1 rounded-full bg-surface-hover px-2 py-0.5 text-xs font-medium text-muted">
                         <CategoryIcon size={11} />
                         {doc.category}
+                      </span>
+                      <span
+                        className={`shrink-0 rounded-full border px-2 py-0.5 text-xs font-medium ${
+                          doc.client_name
+                            ? "border-success-border bg-success-soft text-success"
+                            : "border-neutral-border bg-surface-hover text-muted"
+                        }`}
+                      >
+                        {doc.client_name ?? "General"}
                       </span>
                       {doc.extraction_status === "failed" && (
                         <span className="flex shrink-0 items-center gap-1 rounded-full border border-danger-border bg-danger-soft px-2 py-0.5 text-xs font-medium text-danger">

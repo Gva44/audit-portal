@@ -1,7 +1,11 @@
 import { Suspense } from "react";
 import LoginForm from "./LoginForm";
 
+// Evaluated per request so the Google button only shows once OAuth is actually configured.
+export const dynamic = "force-dynamic";
+
 export default function LoginPage() {
+  const googleEnabled = Boolean(process.env.GOOGLE_OAUTH_CLIENT_ID && process.env.GOOGLE_OAUTH_CLIENT_SECRET);
   return (
     <div
       className="flex min-h-screen items-center justify-center bg-background px-4"
@@ -11,7 +15,7 @@ export default function LoginPage() {
       }}
     >
       <Suspense fallback={null}>
-        <LoginForm />
+        <LoginForm googleEnabled={googleEnabled} />
       </Suspense>
     </div>
   );

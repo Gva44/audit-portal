@@ -79,3 +79,9 @@ export async function verifyPassword(password: string, storedHash: string): Prom
   const computed = await derivePbkdf2Hex(password, saltHex);
   return timingSafeEqualStr(computed, hashHex);
 }
+
+export async function hashPassword(password: string): Promise<string> {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const saltHex = bufToHex(salt.buffer);
+  return `${saltHex}:${await derivePbkdf2Hex(password, saltHex)}`;
+}

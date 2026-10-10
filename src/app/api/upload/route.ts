@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { uploadFile } from "@/lib/drive";
 import { extractDocumentText, XLSX_MIME } from "@/lib/extract";
 import { generateEmbedding, toVectorLiteral } from "@/lib/embeddings";
-import { parseAndSaveQuestions } from "@/lib/questions";
+import { interpretColumnInstructions, parseAndSaveQuestions } from "@/lib/questions";
+import { getClientFolderId } from "@/lib/clients";
+import type { ColumnConfig } from "@/lib/questionnaire-table";
 import { sql, type Category } from "@/lib/db";
 
 // Allow extra time for larger PDFs / Gemini OCR + embedding on Vercel.
@@ -30,6 +32,8 @@ export async function POST(request: NextRequest) {
   const file = form.get("file");
   const category = form.get("category");
   const notes = form.get("notes");
+  const clientIdRaw = form.get("clientId");
+  const columnInstructionsRaw = form.get("columnInstructions");
 
   if (!(file instanceof File)) {
     return NextResponse.json({ error: "file is required" }, { status: 400 });
@@ -44,9 +48,17 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // "general" (or empty) = the shared pool; otherwise a client id.
+  const clientId = typeof clientIdRaw === "string" && clientIdRaw && clientIdRaw !== "general" ? clientIdRaw : null;
+  if (clientId) {
+    const exists = await sql`select 1 from clients where id = ${clientId}`;
+    if (!exists[0]) return NextResponse.json({ error: "Unknown client" }, { status: 400 });
+  }
+
   const buffer = Buffer.from(await file.arrayBuffer());
 
-  const { id: driveFileId, webViewLink } = await uploadFile(buffer, file.name, file.type);
+  const folderId = clientId ? await getClientFolderId(clientId) : null;
+  const { id: driveFileId, webViewLink } = await uploadFile(buffer, file.name, file.type, folderId);
 
   let extractedText = "";
   let extractionStatus: "ok" | "failed" = "ok";
@@ -69,23 +81,40 @@ export async function POST(request: NextRequest) {
   }
 
   const notesValue = typeof notes === "string" && notes.trim() ? notes : null;
+  const columnInstructions =
+    category === "questionnaire" && typeof columnInstructionsRaw === "string" && columnInstructionsRaw.trim()
+      ? columnInstructionsRaw.trim()
+      : null;
 
   const rows = await sql`
     insert into documents (
       filename, category, notes, mime_type, file_size, drive_file_id, drive_web_link,
-      extracted_text, extraction_status, extraction_error, embedding
+      extracted_text, extraction_status, extraction_error, embedding, client_id, column_instructions
     )
     values (
       ${file.name}, ${category}, ${notesValue}, ${file.type}, ${file.size}, ${driveFileId}, ${webViewLink},
-      ${extractedText}, ${extractionStatus}, ${extractionError}, ${embeddingLiteral}::vector
+      ${extractedText}, ${extractionStatus}, ${extractionError}, ${embeddingLiteral}::vector,
+      ${clientId}, ${columnInstructions}
     )
     returning id, filename, category, notes, mime_type, file_size, extraction_status, created_at
   `;
   const document = rows[0];
 
+  let warning: string | null = null;
   if (category === "questionnaire") {
     try {
-      await parseAndSaveQuestions(document.id, buffer, file.type, extractedText);
+      let config: ColumnConfig | null = null;
+      if (columnInstructions) {
+        try {
+          config = await interpretColumnInstructions(buffer, file.type, columnInstructions);
+          await sql`update documents set column_config = ${JSON.stringify(config)}::jsonb where id = ${document.id}`;
+        } catch (err) {
+          // Falls back to automatic column detection; the questionnaire page lets the
+          // uploader pick columns by hand and re-read.
+          warning = `Could not apply your column instructions (${err instanceof Error ? err.message : "unknown error"}); columns were detected automatically.`;
+        }
+      }
+      await parseAndSaveQuestions(document.id, buffer, file.type, extractedText, config);
     } catch (err) {
       // The document itself is saved either way; questions can be extracted later
       // from its detail page, so this isn't fatal to the upload.
@@ -93,5 +122,5 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  return NextResponse.json({ document });
+  return NextResponse.json({ document, warning });
 }

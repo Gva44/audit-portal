@@ -1,17 +1,20 @@
-// Creates (or resets the password for) a portal login.
-// Usage: npm run user:add -- <username> "<Display Name>" [password]
+// Creates (or resets the password for) a portal login from the command line.
+// Usage: npm run user:add -- <email> "<Display Name>" [password] [--admin]
 // If no password is given, a random one is generated and printed once — share it with
-// that person yourself; it is not stored anywhere in plaintext.
+// that person yourself; it is not stored anywhere in plaintext. Admins can also add
+// users from the Admin page in the app once signed in.
 import crypto from "node:crypto";
 import dotenv from "dotenv";
 import { Client } from "pg";
 
 dotenv.config({ path: ".env.local" });
 
-const [, , usernameArg, displayNameArg, passwordArg] = process.argv;
+const args = process.argv.slice(2);
+const isAdmin = args.includes("--admin");
+const [usernameArg, displayNameArg, passwordArg] = args.filter((a) => a !== "--admin");
 
 if (!usernameArg || !displayNameArg) {
-  console.error('Usage: npm run user:add -- <username> "<Display Name>" [password]');
+  console.error('Usage: npm run user:add -- <email> "<Display Name>" [password] [--admin]');
   process.exit(1);
 }
 
@@ -46,12 +49,13 @@ const client = new Client({ connectionString: process.env.DATABASE_URL });
 try {
   await client.connect();
   await client.query(
-    `insert into users (username, display_name, password_hash)
-     values ($1, $2, $3)
-     on conflict (username) do update set display_name = excluded.display_name, password_hash = excluded.password_hash`,
-    [username, displayName, passwordHash]
+    `insert into users (username, display_name, password_hash, role)
+     values ($1, $2, $3, $4)
+     on conflict (username) do update
+       set display_name = excluded.display_name, password_hash = excluded.password_hash, role = excluded.role`,
+    [username, displayName, passwordHash, isAdmin ? "admin" : "user"]
   );
-  console.log(`User "${username}" (${displayName}) is ready.`);
+  console.log(`User "${username}" (${displayName}, ${isAdmin ? "admin" : "user"}) is ready.`);
   if (!passwordArg) {
     console.log(`Generated password: ${password}`);
     console.log("Share this with them directly — it is not stored anywhere in plaintext.");
