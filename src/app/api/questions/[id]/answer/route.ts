@@ -4,7 +4,7 @@ import { generateAnswer } from "@/lib/questions";
 import { AUTH_COOKIE, verifySessionToken } from "@/lib/auth";
 import { fetchQuestions } from "@/lib/question-queries";
 
-export const maxDuration = 30;
+export const maxDuration = 60;
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;

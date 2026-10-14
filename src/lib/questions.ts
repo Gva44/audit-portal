@@ -42,7 +42,18 @@ async function generateJsonDeepSeek<T>(systemInstruction: string, userContent: s
     max_tokens: 4096,
     thinking: { type: "disabled" },
   };
-  const response = (await getDeepSeek().chat.completions.create(params)) as {
+  let raw: unknown;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      raw = await getDeepSeek().chat.completions.create(params);
+      break;
+    } catch (err) {
+      const status = (err as { status?: number }).status;
+      if (attempt >= 2 || !(status === 429 || (status !== undefined && status >= 500))) throw err;
+      await new Promise((resolve) => setTimeout(resolve, 1500 * (attempt + 1)));
+    }
+  }
+  const response = raw as {
     choices: { message?: { content?: string | null }; finish_reason?: string }[];
   };
   const content = response.choices[0]?.message?.content;
