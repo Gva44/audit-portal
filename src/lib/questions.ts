@@ -27,17 +27,28 @@ async function generateJson<T>(systemInstruction: string, userContent: string): 
 // systemInstruction below) and has no structured-output schema like Gemini's, so this
 // just parses whatever valid JSON comes back.
 async function generateJsonDeepSeek<T>(systemInstruction: string, userContent: string): Promise<T> {
-  const response = await getDeepSeek().chat.completions.create({
+  // `thinking` is a DeepSeek-specific field the OpenAI SDK's types don't know about. With
+  // thinking on, the model spends most of max_tokens reasoning first and a long prompt can
+  // leave an empty answer; this task is extraction/classification, so reasoning isn't needed.
+  const params: Parameters<ReturnType<typeof getDeepSeek>["chat"]["completions"]["create"]>[0] & {
+    thinking: { type: "disabled" };
+  } = {
     model: DEEPSEEK_MODEL,
     messages: [
       { role: "system", content: systemInstruction },
       { role: "user", content: userContent },
     ],
     response_format: { type: "json_object" },
-    max_tokens: 2048,
-  });
+    max_tokens: 4096,
+    thinking: { type: "disabled" },
+  };
+  const response = (await getDeepSeek().chat.completions.create(params)) as {
+    choices: { message?: { content?: string | null }; finish_reason?: string }[];
+  };
   const content = response.choices[0]?.message?.content;
-  if (!content) throw new Error("DeepSeek returned an empty response");
+  if (!content) {
+    throw new Error(`DeepSeek returned an empty response (finish reason: ${response.choices[0]?.finish_reason ?? "unknown"})`);
+  }
   return JSON.parse(content) as T;
 }
 
@@ -414,7 +425,10 @@ export async function generateAnswer(ctx: AnswerContext): Promise<GeneratedAnswe
     userContent
   );
 
-  const responseValue = typeof parsed.response === "string" ? parsed.response.trim() : "";
+  let responseValue = typeof parsed.response === "string" ? parsed.response.trim() : "";
+  // The model occasionally puts the "no evidence" sentence in the response field; that
+  // sentence belongs in the comments, and the response is simply "No".
+  if (/^no supporting policy/i.test(responseValue)) responseValue = "No";
   const comments = typeof parsed.comments === "string" ? parsed.comments.trim() : "";
   if (!responseValue || !comments) {
     throw new Error("Model response did not include a response and comments");
