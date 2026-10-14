@@ -125,9 +125,11 @@ export default function AdminPage() {
   return (
     <div className="min-h-screen bg-background md:pl-[232px]">
       <Nav />
-      <main className="mx-auto max-w-3xl px-6 py-12">
-        <h1 className="mb-1 text-2xl font-semibold tracking-tight text-foreground">Admin</h1>
-        <p className="mb-8 text-sm text-muted">Manage clients and who can sign in.</p>
+      <main className="flex flex-col gap-7 px-6 py-10 md:px-12">
+        <header>
+          <h1 className="text-[28px] font-bold tracking-tight text-foreground">Admin</h1>
+          <p className="mt-1.5 text-muted">Manage clients and who can sign in.</p>
+        </header>
 
         {forbidden && (
           <p className="rounded-xl border border-dashed border-border py-10 text-center text-sm text-muted">
@@ -136,8 +138,8 @@ export default function AdminPage() {
         )}
 
         {!forbidden && (
-          <div className="space-y-8">
-            <section className="rounded-2xl border border-border bg-surface p-6 shadow-card">
+          <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
+            <section className="rounded-[14px] border border-border bg-surface p-6">
               <h2 className="mb-1 flex items-center gap-2 text-sm font-semibold text-foreground">
                 <Building2 size={15} /> Clients
               </h2>
@@ -148,12 +150,12 @@ export default function AdminPage() {
               <ul className="mb-4 divide-y divide-border rounded-lg border border-border">
                 <li className="flex items-center justify-between px-3.5 py-2.5 text-sm">
                   <span className="font-medium text-foreground">General</span>
-                  <span className="text-xs text-muted">{generalCount} documents</span>
+                  <span className="text-xs text-muted">{generalCount} {generalCount === 1 ? "document" : "documents"}</span>
                 </li>
                 {clients.map((c) => (
                   <li key={c.id} className="flex items-center justify-between px-3.5 py-2.5 text-sm">
                     <span className="font-medium text-foreground">{c.name}</span>
-                    <span className="text-xs text-muted">{c.document_count} documents</span>
+                    <span className="text-xs text-muted">{c.document_count} {c.document_count === 1 ? "document" : "documents"}</span>
                   </li>
                 ))}
               </ul>
@@ -175,7 +177,7 @@ export default function AdminPage() {
               {clientError && <p className="mt-2 text-sm text-danger">{clientError}</p>}
             </section>
 
-            <section className="rounded-2xl border border-border bg-surface p-6 shadow-card">
+            <section className="rounded-[14px] border border-border bg-surface p-6">
               <h2 className="mb-1 flex items-center gap-2 text-sm font-semibold text-foreground">
                 <UserPlus size={15} /> Users
               </h2>
