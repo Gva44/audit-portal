@@ -103,15 +103,14 @@ export default function UploadPage() {
   return (
     <div className="min-h-screen bg-background md:pl-[232px]">
       <Nav />
-      <main className="mx-auto max-w-2xl px-6 py-12">
-        <h1 className="mb-1 text-2xl font-semibold tracking-tight text-foreground">
-          Upload document
-        </h1>
-        <p className="mb-8 text-sm text-muted">
-          Add a policy, evidence file, or questionnaire to the library.
-        </p>
+      <main className="flex flex-col gap-7 px-6 py-10 md:px-12">
+        <header>
+          <h1 className="text-[28px] font-bold tracking-tight text-foreground">Upload document</h1>
+          <p className="mt-1.5 text-muted">Add a policy, evidence file, or questionnaire to the library.</p>
+        </header>
 
-        <div className="rounded-2xl border border-border bg-surface p-6 shadow-card">
+        <div className="grid items-stretch gap-6 xl:grid-cols-2">
+          <div className="flex flex-col rounded-[14px] border border-border bg-surface p-6">
           <div
             onDragOver={(e) => {
               e.preventDefault();
@@ -119,7 +118,7 @@ export default function UploadPage() {
             }}
             onDragLeave={() => setDragging(false)}
             onDrop={handleDrop}
-            className={`mb-6 flex flex-col items-center justify-center rounded-xl border-2 border-dashed px-6 py-14 text-center transition-colors ${
+            className={`flex min-h-[320px] flex-1 flex-col items-center justify-center rounded-xl border-2 border-dashed px-6 py-14 text-center transition-colors ${
               dragging ? "border-accent bg-accent-soft" : "border-border bg-background"
             }`}
           >
@@ -157,7 +156,9 @@ export default function UploadPage() {
               </>
             )}
           </div>
+          </div>
 
+          <div className="rounded-[14px] border border-border bg-surface p-6">
           <div className="mb-5">
             <label htmlFor="upload-client" className="mb-2 block text-sm font-medium text-foreground">
               Client
@@ -280,6 +281,7 @@ export default function UploadPage() {
               </p>
             </div>
           )}
+          </div>
         </div>
 
         {status.type === "success" && (
