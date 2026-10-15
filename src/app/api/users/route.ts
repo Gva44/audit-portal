@@ -12,7 +12,7 @@ export async function GET(request: NextRequest) {
   const user = await getSessionUser(request);
   if (user?.role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const rows = await sql`
-    select username, display_name, role, (password_hash <> '') as has_password, created_at
+    select username, display_name, role, can_generate, can_assist, (password_hash <> '') as has_password, created_at
     from users order by created_at asc
   `;
   return NextResponse.json({ users: rows });

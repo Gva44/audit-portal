@@ -143,3 +143,21 @@ alter table questions add column if not exists source_scope text;
 alter table questions add column if not exists expected_evidence text;
 
 alter table questions add column if not exists model_used text;
+
+-- AI controls: who may use which AI feature, global switches, and a log of every AI call.
+alter table users add column if not exists can_generate boolean not null default true;
+alter table users add column if not exists can_assist boolean not null default false;
+create table if not exists settings (key text primary key, value text not null);
+create table if not exists ai_usage (
+  id uuid primary key default gen_random_uuid(),
+  username text,
+  feature text not null,
+  provider text not null,
+  model text,
+  input_tokens int not null default 0,
+  output_tokens int not null default 0,
+  est_cost_usd numeric not null default 0,
+  created_at timestamptz not null default now()
+);
+create index if not exists ai_usage_created_at_idx on ai_usage (created_at);
+update users set can_assist = true where role = 'admin';

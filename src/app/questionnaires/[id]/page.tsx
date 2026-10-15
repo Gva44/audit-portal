@@ -3,6 +3,7 @@
 import { use, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import Nav from "@/components/Nav";
+import { DocumentAssistant, QuestionAssistant } from "@/components/Assistant";
 import {
   AlertTriangle,
   ChevronDown,
@@ -151,6 +152,21 @@ export default function QuestionnairePage({ params }: { params: Promise<{ id: st
   const [rereading, setRereading] = useState(false);
   const [setupError, setSetupError] = useState<string | null>(null);
   const compareStarted = useRef(false);
+  const [me, setMe] = useState<{ canGenerate: boolean; canAssist: boolean } | null>(null);
+  const [aiNotice, setAiNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/me")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!d?.user) return;
+        setMe({ canGenerate: !!d.user.canGenerate, canAssist: !!d.user.canAssist });
+        if (!d.user.canGenerate) {
+          setAiNotice("Answer generation is not enabled for your account right now. Ask an administrator if you need it.");
+        }
+      })
+      .catch(() => undefined);
+  }, []);
   const stopRequested = useRef(false);
   const [stopping, setStopping] = useState(false);
   const [batch, setBatch] = useState<{ done: number; total: number; failed: number } | null>(null);
@@ -229,6 +245,8 @@ export default function QuestionnairePage({ params }: { params: Promise<{ id: st
       const data = await res.json().catch(() => ({}));
       if (data.question) {
         setQuestions((prev) => prev.map((q) => (q.id === questionId ? data.question : q)));
+      } else if (data.error) {
+        setAiNotice(data.error);
       }
       return res.ok;
     } catch {
@@ -606,6 +624,15 @@ export default function QuestionnairePage({ params }: { params: Promise<{ id: st
               </section>
             )}
 
+            {aiNotice && (
+              <p className="flex items-start gap-2 rounded-[14px] border border-warning-border bg-warning-soft px-4 py-3 text-sm text-foreground">
+                <AlertTriangle size={15} className="mt-0.5 shrink-0 text-warning" />
+                {aiNotice}
+              </p>
+            )}
+
+            {me?.canAssist && <DocumentAssistant documentId={id} answered={answeredCount} />}
+
             {doc.column_headers && doc.column_headers.length > 0 && (
               <div className="rounded-[14px] border border-border bg-surface">
                 <button
@@ -890,6 +917,10 @@ export default function QuestionnairePage({ params }: { params: Promise<{ id: st
                           </p>
                         )}
                       </div>
+                    )}
+
+                    {me?.canAssist && q.answer_status === "ok" && (
+                      <QuestionAssistant questionId={q.id} citations={q.citations} />
                     )}
 
                     {q.answer_status === "failed" && (

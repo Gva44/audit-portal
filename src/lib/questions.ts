@@ -1,7 +1,7 @@
 import { sql } from "./db";
 import { generateEmbedding, toVectorLiteral } from "./embeddings";
 import { getGemini } from "./gemini";
-import { getDeepSeek, DEEPSEEK_MODEL } from "./deepseek";
+import { generate, type Usage } from "./ai";
 import { buildTable, readGrid, toQuestionRows, type ColumnConfig, type QuestionRow } from "./questionnaire-table";
 import { XLSX_MIME } from "./extract";
 
@@ -23,85 +23,14 @@ async function generateJson<T>(systemInstruction: string, userContent: string): 
   return JSON.parse(content) as T;
 }
 
-// DeepSeek's JSON mode requires the word "json" in the prompt (already present in every
-// systemInstruction below) and has no structured-output schema like Gemini's, so this
-// just parses whatever valid JSON comes back.
-async function generateJsonDeepSeek<T>(systemInstruction: string, userContent: string): Promise<T> {
-  // `thinking` is a DeepSeek-specific field the OpenAI SDK's types don't know about. With
-  // thinking on, the model spends most of max_tokens reasoning first and a long prompt can
-  // leave an empty answer; this task is extraction/classification, so reasoning isn't needed.
-  const params: Parameters<ReturnType<typeof getDeepSeek>["chat"]["completions"]["create"]>[0] & {
-    thinking: { type: "disabled" };
-  } = {
-    model: DEEPSEEK_MODEL,
-    messages: [
-      { role: "system", content: systemInstruction },
-      { role: "user", content: userContent },
-    ],
-    response_format: { type: "json_object" },
-    max_tokens: 4096,
-    thinking: { type: "disabled" },
-  };
-  let raw: unknown;
-  for (let attempt = 0; ; attempt++) {
-    try {
-      raw = await getDeepSeek().chat.completions.create(params);
-      break;
-    } catch (err) {
-      const status = (err as { status?: number }).status;
-      const timedOut = /timed out|timeout|aborted/i.test(err instanceof Error ? err.message : "");
-      const busy = timedOut || status === 429 || (status !== undefined && status >= 500);
-      if (busy && (timedOut || attempt >= 2)) {
-        throw new Error("DeepSeek is busy right now and did not answer in time. Please try again in a minute.");
-      }
-      if (!busy) throw err;
-      await new Promise((resolve) => setTimeout(resolve, 1500 * (attempt + 1)));
-    }
-  }
-  const response = raw as {
-    choices: { message?: { content?: string | null }; finish_reason?: string }[];
-  };
-  const content = response.choices[0]?.message?.content;
-  if (!content) {
-    throw new Error(`DeepSeek returned an empty response (finish reason: ${response.choices[0]?.finish_reason ?? "unknown"})`);
-  }
-  return JSON.parse(content) as T;
-}
-
-function errorText(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
-}
-
-// Gemini's free tier regularly answers 503 "high demand" for a moment, so one more try.
-async function generateJsonGeminiWithRetry<T>(systemInstruction: string, userContent: string): Promise<T> {
-  try {
-    return await generateJson<T>(systemInstruction, userContent);
-  } catch (err) {
-    if (!/\b(503|429|500)\b|UNAVAILABLE|high demand/i.test(errorText(err))) throw err;
-    await new Promise((resolve) => setTimeout(resolve, 2500));
-    return generateJson<T>(systemInstruction, userContent);
-  }
-}
-
-// DeepSeek is the main model for answers. If it fails or does not answer in time (it is
-// sometimes overloaded, and an unfunded balance fails the same way), Gemini answers that
-// one question instead so the team is never blocked. Which model answered is recorded.
+// Answers use the shared AI layer (src/lib/ai.ts): DeepSeek first, Gemini as the backup,
+// with token counts returned so usage can be shown to the administrators.
 async function generateJsonResilient<T>(
   systemInstruction: string,
   userContent: string
-): Promise<{ data: T; modelUsed: string }> {
-  try {
-    return { data: await generateJsonDeepSeek<T>(systemInstruction, userContent), modelUsed: DEEPSEEK_MODEL };
-  } catch (deepSeekErr) {
-    try {
-      const data = await generateJsonGeminiWithRetry<T>(systemInstruction, userContent);
-      return { data, modelUsed: `${GENERATION_MODEL} (backup)` };
-    } catch (geminiErr) {
-      throw new Error(
-        `DeepSeek failed (${errorText(deepSeekErr).slice(0, 120)}) and the Gemini backup also failed (${errorText(geminiErr).slice(0, 120)}). Please try again in a minute.`
-      );
-    }
-  }
+): Promise<{ data: T; modelUsed: string; usage: Usage }> {
+  const r = await generate({ system: systemInstruction, user: userContent, json: true });
+  return { data: JSON.parse(r.text) as T, modelUsed: r.modelUsed, usage: r.usage };
 }
 
 // Keeps extraction fast and within context comfortably even for large questionnaires;
@@ -204,7 +133,7 @@ export async function interpretColumnInstructions(
     .map((r, i) => `Row ${i + 1}: ` + r.map((c, j) => `[${j}] ${c.slice(0, 60)}`).join(" | "))
     .join("\n");
 
-  const parsed = await generateJsonDeepSeek<Record<string, unknown>>(
+  const { data: parsed } = await generateJsonResilient<Record<string, unknown>>(
     "You map a person's plain-English note about a questionnaire spreadsheet/table onto its columns. " +
       "Columns are shown as [index] with 0-based indexes (column A = 0, B = 1, C = 2 ...). Rows are 1-based. " +
       "Respond with JSON: {\"sheet\": string|null, \"headerRow\": number|null, \"questionCol\": number|null, " +
@@ -268,6 +197,7 @@ export type GeneratedAnswer = {
   priorQuestionId: string | null;
   // Which model wrote the answer; "(backup)" means Gemini stepped in for DeepSeek.
   modelUsed: string | null;
+  usage: Usage | null;
 };
 
 // Cosine-similarity cut-offs for how a question relates to one asked before. Deliberately
@@ -354,7 +284,7 @@ const STOPWORDS = new Set(
   ).split(" ")
 );
 
-function keywordsOf(text: string): string[] {
+export function keywordsOf(text: string): string[] {
   const words = text.toLowerCase().match(/[a-z][a-z0-9-]{3,}/g) ?? [];
   return [...new Set(words.filter((w) => !STOPWORDS.has(w)))];
 }
@@ -363,7 +293,7 @@ function keywordsOf(text: string): string[] {
 // question is rarely at the top. Instead of sending each document's opening, split it
 // into passages and send the opening (for context and the document reference) plus the
 // passages that share the most meaningful words with the question.
-function selectPassages(text: string, keywords: string[], budget: number): string {
+export function selectPassages(text: string, keywords: string[], budget: number): string {
   if (text.length <= budget) return text;
 
   const passages: { start: number; text: string }[] = [];
@@ -405,7 +335,40 @@ function selectPassages(text: string, keywords: string[], budget: number): strin
     .join("\n[...]\n");
 }
 
-const PASSAGE_BUDGET_PER_DOC = 3600;
+export const PASSAGE_BUDGET_PER_DOC = 3600;
+
+export type RetrievedDoc = { id: string; filename: string; clientId: string | null; text: string };
+
+// Same hybrid search as answer generation (client documents boosted, General included),
+// returning the passages most relevant to `query` for the assistant to ground itself in.
+export async function retrieveDocs(query: string, clientId: string | null, limit = 5): Promise<RetrievedDoc[]> {
+  const vectorLiteral = toVectorLiteral(await generateEmbedding(query));
+  const rows = await sql`
+    select id, filename, extracted_text, client_id,
+           (
+             coalesce(ts_rank(
+               to_tsvector('english', coalesce(filename, '') || ' ' || coalesce(extracted_text, '')),
+               plainto_tsquery('english', ${query})
+             ), 0) * 0.4
+             + coalesce(1 - (embedding <=> ${vectorLiteral}::vector), 0) * 0.6
+             + case when client_id is not null then ${CLIENT_DOC_BOOST}::float else 0 end
+           ) as score
+    from documents
+    where category in ('policy', 'evidence')
+      and embedding is not null
+      and extracted_text is not null
+      and (client_id is null or client_id = ${clientId}::uuid)
+    order by score desc
+    limit ${limit}
+  `;
+  const keywords = keywordsOf(query);
+  return rows.map((r) => ({
+    id: r.id as string,
+    filename: r.filename as string,
+    clientId: (r.client_id as string | null) ?? null,
+    text: selectPassages(String(r.extracted_text), keywords, PASSAGE_BUDGET_PER_DOC),
+  }));
+}
 
 export type AnswerContext = {
   questionText: string;
@@ -463,6 +426,7 @@ export async function generateAnswer(ctx: AnswerContext): Promise<GeneratedAnswe
       embeddingLiteral: vectorLiteral,
       priorQuestionId: priorMatch ? priorMatch.id : null,
       modelUsed: null,
+      usage: null,
     };
   }
 
@@ -490,7 +454,7 @@ export async function generateAnswer(ctx: AnswerContext): Promise<GeneratedAnswe
     .filter(Boolean)
     .join("\n\n");
 
-  const { data: parsed, modelUsed } = await generateJsonResilient<{
+  const { data: parsed, modelUsed, usage } = await generateJsonResilient<{
     response?: unknown;
     comments?: unknown;
     confidenceScore?: unknown;
@@ -605,5 +569,6 @@ export async function generateAnswer(ctx: AnswerContext): Promise<GeneratedAnswe
     embeddingLiteral: vectorLiteral,
     priorQuestionId: priorMatch ? priorMatch.id : null,
     modelUsed,
+    usage,
   };
 }

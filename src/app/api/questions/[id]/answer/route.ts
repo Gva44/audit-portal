@@ -1,14 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sql } from "@/lib/db";
 import { generateAnswer } from "@/lib/questions";
-import { AUTH_COOKIE, verifySessionToken } from "@/lib/auth";
+import { getSessionUser } from "@/lib/session";
+import { checkAiAccess, logAiUsage } from "@/lib/ai-control";
 import { fetchQuestions } from "@/lib/question-queries";
 
 export const maxDuration = 120;
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const generatedBy = await verifySessionToken(request.cookies.get(AUTH_COOKIE)?.value);
+  const user = await getSessionUser(request);
+  const access = await checkAiAccess(user, "generate");
+  if (!access.ok) return NextResponse.json({ error: access.reason }, { status: access.status });
+  const generatedBy = user!.username;
 
   const existing = await sql`
     select q.question_text, q.row_data, q.expected_evidence, q.document_id, d.client_id
@@ -27,6 +31,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       documentId: question.document_id as string,
       clientId: (question.client_id as string | null) ?? null,
     });
+    await logAiUsage(generatedBy, "answer", generated.usage);
     await sql`
       update questions
       set answer_text = ${generated.comments},

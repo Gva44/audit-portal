@@ -14,6 +14,12 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   if (typeof body.password === "string" && body.password) {
     await sql`update users set password_hash = ${await hashPassword(body.password)} where username = ${username}`;
   }
+  if (typeof body.canGenerate === "boolean") {
+    await sql`update users set can_generate = ${body.canGenerate} where username = ${username}`;
+  }
+  if (typeof body.canAssist === "boolean") {
+    await sql`update users set can_assist = ${body.canAssist} where username = ${username}`;
+  }
   if (body.role === "admin" || body.role === "user") {
     if (body.role === "user" && username === admin.username) {
       return NextResponse.json({ error: "You cannot remove your own admin role" }, { status: 400 });
