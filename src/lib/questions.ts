@@ -49,7 +49,12 @@ async function generateJsonDeepSeek<T>(systemInstruction: string, userContent: s
       break;
     } catch (err) {
       const status = (err as { status?: number }).status;
-      if (attempt >= 2 || !(status === 429 || (status !== undefined && status >= 500))) throw err;
+      const timedOut = /timed out|timeout|aborted/i.test(err instanceof Error ? err.message : "");
+      const busy = timedOut || status === 429 || (status !== undefined && status >= 500);
+      if (busy && (timedOut || attempt >= 2)) {
+        throw new Error("DeepSeek is busy right now and did not answer in time. Please try again in a minute.");
+      }
+      if (!busy) throw err;
       await new Promise((resolve) => setTimeout(resolve, 1500 * (attempt + 1)));
     }
   }
@@ -199,8 +204,7 @@ function findExpectedEvidence(rowData: Record<string, string> | null | undefined
   return null;
 }
 
-const MAX_RETRIEVED_DOCS = 5;
-const MAX_EXCERPT_CHARS = 3000;
+const MAX_RETRIEVED_DOCS = 6;
 // A client's own documents win ties against General ones of similar relevance.
 const CLIENT_DOC_BOOST = 0.1;
 
@@ -304,6 +308,67 @@ function optionalText(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
+const STOPWORDS = new Set(
+  (
+    "that this with have from they their will would should could about which these those there were been being " +
+    "what when where does doing done into than then them also such upon only your yours ours other more most " +
+    "some any each every must shall may can the and for are not but all has had its our out per via"
+  ).split(" ")
+);
+
+function keywordsOf(text: string): string[] {
+  const words = text.toLowerCase().match(/[a-z][a-z0-9-]{3,}/g) ?? [];
+  return [...new Set(words.filter((w) => !STOPWORDS.has(w)))];
+}
+
+// A long policy can be tens of thousands of characters, and the part that answers a
+// question is rarely at the top. Instead of sending each document's opening, split it
+// into passages and send the opening (for context and the document reference) plus the
+// passages that share the most meaningful words with the question.
+function selectPassages(text: string, keywords: string[], budget: number): string {
+  if (text.length <= budget) return text;
+
+  const passages: { start: number; text: string }[] = [];
+  let current = "";
+  let start = 0;
+  let offset = 0;
+  for (const line of text.split("\n")) {
+    if (current.length + line.length > 1100 && current) {
+      passages.push({ start, text: current });
+      current = "";
+      start = offset;
+    }
+    current += (current ? "\n" : "") + line;
+    offset += line.length + 1;
+  }
+  if (current) passages.push({ start, text: current });
+
+  const opening = passages[0];
+  const scored = passages
+    .slice(1)
+    .map((p) => {
+      const lower = p.text.toLowerCase();
+      const score = keywords.reduce((sum, k) => (lower.includes(k) ? sum + 1 : sum), 0);
+      return { ...p, score };
+    })
+    .filter((p) => p.score > 0)
+    .sort((a, b) => b.score - a.score);
+
+  let used = Math.min(opening.text.length, 700);
+  const chosen = [{ start: opening.start, text: opening.text.slice(0, 700) }];
+  for (const p of scored) {
+    if (used + p.text.length > budget) continue;
+    chosen.push(p);
+    used += p.text.length;
+  }
+  return chosen
+    .sort((a, b) => a.start - b.start)
+    .map((p) => p.text)
+    .join("\n[...]\n");
+}
+
+const PASSAGE_BUDGET_PER_DOC = 3600;
+
 export type AnswerContext = {
   questionText: string;
   rowData?: Record<string, string> | null;
@@ -362,14 +427,14 @@ export async function generateAnswer(ctx: AnswerContext): Promise<GeneratedAnswe
     };
   }
 
+  const expectedEvidence = ctx.expectedEvidence ?? findExpectedEvidence(rowData);
+  const keywords = keywordsOf(`${questionText} ${expectedEvidence ?? ""}`);
   const excerpts = rows
     .map(
       (r) =>
-        `[doc id="${r.id}" filename="${r.filename}" scope="${r.client_id ? "client" : "general"}"]\n${String(r.extracted_text).slice(0, MAX_EXCERPT_CHARS)}\n[/doc]`
+        `[doc id="${r.id}" filename="${r.filename}" scope="${r.client_id ? "client" : "general"}"]\n${selectPassages(String(r.extracted_text), keywords, PASSAGE_BUDGET_PER_DOC)}\n[/doc]`
     )
     .join("\n\n");
-
-  const expectedEvidence = ctx.expectedEvidence ?? findExpectedEvidence(rowData);
   const userContent = [
     `Excerpts:\n\n${excerpts}`,
     expectedEvidence ? `Evidence the client expects for this question: ${expectedEvidence}` : null,
@@ -401,15 +466,19 @@ export async function generateAnswer(ctx: AnswerContext): Promise<GeneratedAnswe
       "facts not present in the excerpts, and never include passwords, API keys, or other secrets in " +
       "your answer even if they appear in the excerpts.\n\n" +
       "Determine:\n" +
-      '- response: "Yes" if the excerpts clearly and fully support a positive answer, "Partial" if they ' +
-      'support some but not all aspects, "No" if excerpts contradict or a negative answer is clearly ' +
-      'implied, "NA" if the question does not apply, or a short free-text value if the question is not ' +
-      "a yes/no/na question (e.g. asks for a description, a number, or a list).\n" +
+      '- response: "Yes" if the excerpts clearly and fully support a positive answer. "Partial" if the ' +
+      "excerpts address ANY part of the question — a related process, a policy that covers some of the " +
+      "listed points, or a control that exists but lacks something asked for. Prefer Partial over No " +
+      'whenever related content exists. "No" ONLY if the excerpts contain nothing relevant, or clearly ' +
+      'contradict the requirement. "NA" if the question does not apply, or a short free-text value if the ' +
+      "question is not a yes/no/na question (e.g. asks for a description, a number, or a list).\n" +
       "- comments: a concise (max 200 words), formal justification suitable for submission to a bank. " +
       "State the control/process in place, cite the specific document (and section/clause if " +
-      "identifiable from the excerpt), and mention frequency, scope, or metrics where relevant. If " +
-      'partial, state what is missing. If no evidence was found, use exactly: "No supporting policy ' +
-      'found – requires manual review."\n' +
+      "identifiable from the excerpt), and mention frequency, scope, or metrics where relevant. If the " +
+      "question lists sub-points (a, b, c ...), say which are covered and by which document, and which are " +
+      "not covered. If partial, state clearly what is missing. Put this wording in comments, never in the " +
+      'response field. Only if the excerpts contain nothing relevant at all, use exactly: "No supporting ' +
+      'policy found – requires manual review."\n' +
       "- confidenceScore (0 to 1): how well the excerpts support the answer. 0.8+ only if at least two " +
       "strong, unambiguous matches fully cover the question and any evidence the client expects; " +
       "0.5-0.79 if one strong but incomplete match or the answer is only partly covered; below 0.5 if " +
@@ -426,8 +495,9 @@ export async function generateAnswer(ctx: AnswerContext): Promise<GeneratedAnswe
           "- recommendation: tell the IT team in one to three sentences whether last year's answer can be " +
           "reused as-is, or what to update in the response, remark or evidence given the current excerpts, " +
           "and anything better that can now be said than last year.\n"
-        : "- recommendation: only if there is a gap, one or two sentences on what to add or change in the " +
-          "remark or evidence; otherwise null.\n") +
+        : '- recommendation: required whenever the response is "Partial" or "No" — one to three sentences ' +
+          "naming the policy section to add or amend, or the evidence to prepare, so the question can be " +
+          "answered in full; otherwise null.\n") +
       '\nRespond with JSON: {"response": string, "comments": string, "confidenceScore": number, ' +
       '"suggestedAction": string|null, "supportingDocumentIds": string[], ' +
       '"comparisonStatus": string|null, "comparisonNote": string|null, "recommendation": string|null}. ' +
