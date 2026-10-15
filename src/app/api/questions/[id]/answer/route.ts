@@ -49,7 +49,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           prior_question_id = ${generated.priorQuestionId},
           previous_response_value = response_value,
           previous_answer_text = answer_text,
-          edited_by = null, edited_at = null,
+          edited_by = null, edited_at = null, updated_at = now(),
           generated_by = ${generatedBy},
           model_used = ${generated.modelUsed},
           answer_status = 'ok', answer_error = null
@@ -60,7 +60,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const message = err instanceof Error ? err.message : "Unknown error generating answer";
     await sql`
       update questions
-      set answer_status = 'failed', answer_error = ${message}, generated_by = ${generatedBy}
+      set answer_status = 'failed', answer_error = ${message}, generated_by = ${generatedBy}, updated_at = now()
       where id = ${id}
     `;
     return NextResponse.json({ question: (await fetchQuestions({ questionId: id }))[0] }, { status: 500 });

@@ -13,7 +13,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     update questions q
     set previous_response_value = q.response_value,
         previous_answer_text = q.answer_text,
-        edited_by = null, edited_at = null,
+        edited_by = null, edited_at = null, updated_at = now(),
         answer_text = p.answer_text,
         response_value = p.response_value,
         citations = p.citations,

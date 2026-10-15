@@ -4,6 +4,7 @@ import { extractDocumentText, XLSX_MIME } from "@/lib/extract";
 import { generateEmbedding, toVectorLiteral } from "@/lib/embeddings";
 import { interpretColumnInstructions, parseAndSaveQuestions } from "@/lib/questions";
 import { getClientFolderId } from "@/lib/clients";
+import { getSessionUser } from "@/lib/session";
 import type { ColumnConfig } from "@/lib/questionnaire-table";
 import { sql, type Category } from "@/lib/db";
 
@@ -26,6 +27,7 @@ const ALLOWED_MIME_TYPES = new Set([
 const CATEGORIES = new Set<Category>(["policy", "evidence", "questionnaire"]);
 
 export async function POST(request: NextRequest) {
+  const uploader = await getSessionUser(request);
   const form = await request.formData().catch(() => null);
   if (!form) return NextResponse.json({ error: "Expected multipart/form-data" }, { status: 400 });
 
@@ -89,12 +91,12 @@ export async function POST(request: NextRequest) {
   const rows = await sql`
     insert into documents (
       filename, category, notes, mime_type, file_size, drive_file_id, drive_web_link,
-      extracted_text, extraction_status, extraction_error, embedding, client_id, column_instructions
+      extracted_text, extraction_status, extraction_error, embedding, client_id, column_instructions, uploaded_by
     )
     values (
       ${file.name}, ${category}, ${notesValue}, ${file.type}, ${file.size}, ${driveFileId}, ${webViewLink},
       ${extractedText}, ${extractionStatus}, ${extractionError}, ${embeddingLiteral}::vector,
-      ${clientId}, ${columnInstructions}
+      ${clientId}, ${columnInstructions}, ${uploader?.username ?? null}
     )
     returning id, filename, category, notes, mime_type, file_size, extraction_status, created_at
   `;

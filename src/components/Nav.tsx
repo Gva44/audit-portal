@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { LayoutGrid, LogOut, Settings, ShieldCheck, Upload } from "lucide-react";
+import { Gauge, LayoutGrid, LogOut, Settings, ShieldCheck, Upload } from "lucide-react";
 
 type ClientRow = { id: string; name: string; document_count: number };
 
@@ -70,6 +70,10 @@ function NavInner() {
 
   const links = (
     <>
+      <Link href="/dashboard" className={linkClass("/dashboard")}>
+        <Gauge size={16} />
+        Dashboard
+      </Link>
       <Link href="/library" className={linkClass("/library")}>
         <LayoutGrid size={16} />
         Library

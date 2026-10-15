@@ -15,7 +15,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     set response_value = previous_response_value,
         answer_text = previous_answer_text,
         previous_response_value = null, previous_answer_text = null,
-        edited_by = null, edited_at = null
+        edited_by = null, edited_at = null, updated_at = now()
     where id = ${id} and previous_answer_text is not null
     returning id
   `;

@@ -167,3 +167,8 @@ alter table questions add column if not exists edited_by text;
 alter table questions add column if not exists edited_at timestamptz;
 alter table questions add column if not exists previous_response_value text;
 alter table questions add column if not exists previous_answer_text text;
+
+-- Activity tracking for the dashboard.
+alter table questions add column if not exists updated_at timestamptz;
+update questions set updated_at = created_at where updated_at is null;
+alter table documents add column if not exists uploaded_by text;

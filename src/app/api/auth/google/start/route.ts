@@ -9,7 +9,7 @@ export async function GET(request: NextRequest) {
   }
 
   const state = crypto.randomUUID();
-  const next = request.nextUrl.searchParams.get("next") || "/library";
+  const next = request.nextUrl.searchParams.get("next") || "/dashboard";
   const url = new URL("https://accounts.google.com/o/oauth2/v2/auth");
   url.searchParams.set("client_id", clientId);
   url.searchParams.set("redirect_uri", new URL("/api/auth/google/callback", request.url).toString());

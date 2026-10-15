@@ -51,7 +51,7 @@ export async function GET(request: NextRequest) {
   const rows = await sql`select username from users where username = ${email}`;
   if (!rows[0]) return fail(request, "not_registered");
 
-  const target = next && next.startsWith("/") && !next.startsWith("//") ? next : "/library";
+  const target = next && next.startsWith("/") && !next.startsWith("//") ? next : "/dashboard";
   const response = NextResponse.redirect(new URL(target, request.url));
   response.cookies.delete(STATE_COOKIE);
   response.cookies.set(AUTH_COOKIE, await createSessionToken(email), {

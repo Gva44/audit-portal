@@ -38,7 +38,7 @@ export default function LoginForm({ googleEnabled = false }: { googleEnabled?: b
       setError("Incorrect email or password");
       return;
     }
-    const next = searchParams.get("next") || "/library";
+    const next = searchParams.get("next") && searchParams.get("next") !== "/" ? searchParams.get("next")! : "/dashboard";
     router.push(next);
     router.refresh();
   }
@@ -55,7 +55,7 @@ export default function LoginForm({ googleEnabled = false }: { googleEnabled?: b
       {googleEnabled && (
         <>
           <a
-            href={`/api/auth/google/start?next=${encodeURIComponent(searchParams.get("next") || "/library")}`}
+            href={`/api/auth/google/start?next=${encodeURIComponent(searchParams.get("next") || "/dashboard")}`}
             className="flex items-center justify-center gap-2.5 rounded-[10px] border border-border bg-surface px-4 py-3 text-sm font-semibold text-foreground transition-colors hover:bg-surface-hover"
           >
             <svg width="17" height="17" viewBox="0 0 48 48" aria-hidden="true">

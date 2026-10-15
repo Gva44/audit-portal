@@ -29,7 +29,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         response_value = ${responseValue},
         answer_text = ${answerText},
         answer_status = 'ok', answer_error = null,
-        edited_by = ${user.username}, edited_at = now()
+        edited_by = ${user.username}, edited_at = now(), updated_at = now()
     where id = ${id}
     returning id
   `;
