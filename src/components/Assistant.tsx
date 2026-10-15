@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import {
   AlertTriangle,
   ClipboardList,
+  Check,
   Copy,
   Download,
   FileEdit,
@@ -12,12 +13,14 @@ import {
   ListChecks,
   Loader2,
   Map as MapIcon,
+  PenLine,
   Sparkles,
   TrendingUp,
   X,
 } from "lucide-react";
 
-type Result = { title: string; text: string; modelUsed: string; downloadable: boolean };
+type Proposed = { responseValue: string; answerText: string };
+type Result = { title: string; text: string; modelUsed: string; downloadable: boolean; proposed?: Proposed | null };
 type Citation = { id: string; filename: string };
 type PolicyOption = { id: string; filename: string };
 
@@ -99,8 +102,19 @@ function RenderedText({ text }: { text: string }) {
   );
 }
 
-function ResultCard({ result, onClose }: { result: Result; onClose: () => void }) {
+function ResultCard({
+  result,
+  onClose,
+  onUse,
+}: {
+  result: Result;
+  onClose: () => void;
+  onUse?: (proposed: Proposed) => Promise<void>;
+}) {
   const [copied, setCopied] = useState(false);
+  const [using, setUsing] = useState(false);
+  const [used, setUsed] = useState(false);
+  const [useError, setUseError] = useState<string | null>(null);
   return (
     <div className="rounded-xl border border-border bg-surface p-4 shadow-[0_1px_2px_rgba(16,24,40,0.04)]">
       <div className="mb-3 flex items-start justify-between gap-3">
@@ -124,6 +138,27 @@ function ResultCard({ result, onClose }: { result: Result; onClose: () => void }
       </div>
       <RenderedText text={result.text} />
       <div className="mt-4 flex flex-wrap gap-2">
+        {result.proposed && onUse && (
+          <button
+            onClick={async () => {
+              setUsing(true);
+              setUseError(null);
+              try {
+                await onUse(result.proposed!);
+                setUsed(true);
+              } catch (err) {
+                setUseError(err instanceof Error ? err.message : "Could not update the answer.");
+              } finally {
+                setUsing(false);
+              }
+            }}
+            disabled={using || used}
+            className="flex items-center gap-1.5 rounded-full bg-accent px-3.5 py-1.5 text-xs font-semibold text-accent-foreground transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {using ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+            {used ? "Answer updated" : "Use this answer"}
+          </button>
+        )}
         <button
           onClick={async () => {
             await navigator.clipboard.writeText(result.text);
@@ -145,6 +180,13 @@ function ResultCard({ result, onClose }: { result: Result; onClose: () => void }
           </button>
         )}
       </div>
+      {useError && <p className="mt-2 text-xs text-danger">{useError}</p>}
+      {used && (
+        <p className="mt-2 text-xs text-muted">
+          The answer above now uses this wording. The score is unchanged, because it reflects your documents. Use
+          Restore previous answer if you change your mind.
+        </p>
+      )}
     </div>
   );
 }
@@ -177,7 +219,15 @@ function ActionButton({
 let policyListCache: PolicyOption[] | null = null;
 
 // Buttons for one answer: explain it, raise its score, draft or improve a policy.
-export function QuestionAssistant({ questionId, citations }: { questionId: string; citations: Citation[] }) {
+export function QuestionAssistant({
+  questionId,
+  citations,
+  onQuestionUpdated,
+}: {
+  questionId: string;
+  citations: Citation[];
+  onQuestionUpdated: (question: unknown) => void;
+}) {
   const [busy, setBusy] = useState<string | null>(null);
   const [result, setResult] = useState<Result | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -220,6 +270,7 @@ export function QuestionAssistant({ questionId, citations }: { questionId: strin
         <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-2">AI help</span>
         <ActionButton icon={HelpCircle} label="Why this answer?" busy={busy === "explain"} disabled={!!busy} onClick={() => run("explain", { action: "explain" })} />
         <ActionButton icon={TrendingUp} label="How to raise the score" busy={busy === "raise"} disabled={!!busy} onClick={() => run("raise", { action: "raise_score" })} />
+        <ActionButton icon={PenLine} label="Rewrite the answer" busy={busy === "rewrite"} disabled={!!busy} onClick={() => run("rewrite", { action: "rewrite_answer" })} />
         <ActionButton icon={FilePlus2} label="Draft the missing policy" busy={busy === "draft"} disabled={!!busy} onClick={() => run("draft", { action: "draft_policy" })} />
         <ActionButton icon={FileEdit} label="Improve a policy" busy={false} disabled={!!busy} onClick={() => setImproving((v) => !v)} />
       </div>
@@ -279,7 +330,150 @@ export function QuestionAssistant({ questionId, citations }: { questionId: strin
           {error}
         </p>
       )}
-      {result && <ResultCard result={result} onClose={() => setResult(null)} />}
+      {result && (
+        <ResultCard
+          result={result}
+          onClose={() => setResult(null)}
+          onUse={async (proposed) => {
+            const res = await fetch(`/api/questions/${questionId}/edit`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ responseValue: proposed.responseValue, answerText: proposed.answerText }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.error || "Could not update the answer.");
+            onQuestionUpdated(data.question);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// Edit, and restore, the answer text by hand.
+export function AnswerEditor({
+  questionId,
+  responseValue,
+  answerText,
+  canRestore,
+  editedBy,
+  editedAt,
+  onQuestionUpdated,
+}: {
+  questionId: string;
+  responseValue: string | null;
+  answerText: string | null;
+  canRestore: boolean;
+  editedBy: string | null;
+  editedAt: string | null;
+  onQuestionUpdated: (question: unknown) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [response, setResponse] = useState(responseValue ?? "");
+  const [comments, setComments] = useState(answerText ?? "");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function post(path: string, body?: Record<string, unknown>) {
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/questions/${questionId}/${path}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: body ? JSON.stringify(body) : undefined,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "That did not work.");
+      onQuestionUpdated(data.question);
+      setEditing(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "That did not work.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (editing) {
+    return (
+      <div className="mt-3 flex flex-col gap-2">
+        <div className="flex gap-2">
+          <input
+            value={response}
+            onChange={(e) => setResponse(e.target.value)}
+            list={`responses-${questionId}`}
+            placeholder="Response"
+            className="w-40 rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-accent"
+          />
+          <datalist id={`responses-${questionId}`}>
+            <option value="Yes" />
+            <option value="Partial" />
+            <option value="No" />
+            <option value="NA" />
+          </datalist>
+        </div>
+        <textarea
+          value={comments}
+          onChange={(e) => setComments(e.target.value)}
+          rows={6}
+          className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm leading-relaxed text-foreground outline-none focus:border-accent"
+        />
+        <div className="flex gap-2">
+          <button
+            onClick={() => post("edit", { responseValue: response, answerText: comments })}
+            disabled={saving || !response.trim() || !comments.trim()}
+            className="flex items-center gap-1.5 rounded-lg bg-accent px-3.5 py-1.5 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {saving && <Loader2 size={13} className="animate-spin" />}
+            Save changes
+          </button>
+          <button
+            onClick={() => {
+              setEditing(false);
+              setResponse(responseValue ?? "");
+              setComments(answerText ?? "");
+            }}
+            className="rounded-lg border border-border px-3.5 py-1.5 text-sm font-medium text-muted transition-colors hover:bg-surface-hover"
+          >
+            Cancel
+          </button>
+        </div>
+        {error && <p className="text-xs text-danger">{error}</p>}
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-3 flex flex-wrap items-center gap-2">
+      <button
+        onClick={() => {
+          setResponse(responseValue ?? "");
+          setComments(answerText ?? "");
+          setEditing(true);
+        }}
+        className="flex items-center gap-1.5 rounded-full border border-border bg-surface px-3 py-1 text-xs font-medium text-foreground transition-colors hover:bg-surface-hover"
+      >
+        <PenLine size={12} />
+        Edit answer
+      </button>
+      {canRestore && (
+        <button
+          onClick={() => post("restore")}
+          disabled={saving}
+          className="flex items-center gap-1.5 rounded-full border border-border bg-surface px-3 py-1 text-xs font-medium text-muted transition-colors hover:bg-surface-hover disabled:opacity-50"
+        >
+          {saving && <Loader2 size={12} className="animate-spin" />}
+          Restore previous answer
+        </button>
+      )}
+      {editedBy && (
+        <span className="text-xs text-muted-2">
+          Edited by {editedBy}
+          {editedAt ? ` · ${new Date(editedAt).toLocaleDateString(undefined, { day: "numeric", month: "short" })}` : ""} · score
+          reflects documents, not the edit
+        </span>
+      )}
+      {error && <span className="text-xs text-danger">{error}</span>}
     </div>
   );
 }

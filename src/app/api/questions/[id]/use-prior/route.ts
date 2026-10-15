@@ -11,7 +11,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
   const rows = await sql`
     update questions q
-    set answer_text = p.answer_text,
+    set previous_response_value = q.response_value,
+        previous_answer_text = q.answer_text,
+        edited_by = null, edited_at = null,
+        answer_text = p.answer_text,
         response_value = p.response_value,
         citations = p.citations,
         suggested_action = null,

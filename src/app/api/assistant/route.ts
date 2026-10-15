@@ -30,6 +30,7 @@ export async function POST(request: NextRequest) {
       text: result.text,
       modelUsed: result.modelUsed,
       downloadable: result.downloadable,
+      proposed: result.proposed ?? null,
     });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : "The assistant could not complete that." }, { status: 500 });

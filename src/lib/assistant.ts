@@ -7,12 +7,13 @@ export type AssistantAction =
   | "explain"
   | "raise_score"
   | "draft_policy"
+  | "rewrite_answer"
   | "improve_policy"
   | "gap_report"
   | "evidence_checklist"
   | "fix_first";
 
-export const QUESTION_ACTIONS: AssistantAction[] = ["explain", "raise_score", "draft_policy", "improve_policy"];
+export const QUESTION_ACTIONS: AssistantAction[] = ["explain", "raise_score", "draft_policy", "rewrite_answer", "improve_policy"];
 export const DOCUMENT_ACTIONS: AssistantAction[] = ["gap_report", "evidence_checklist", "fix_first"];
 
 export type AssistantResult = {
@@ -22,6 +23,8 @@ export type AssistantResult = {
   usage: Usage;
   // Drafts and rewrites are offered as a Word download.
   downloadable: boolean;
+  // Present for a rewritten answer: wording the person can choose to put into the answer.
+  proposed?: { responseValue: string; answerText: string };
 };
 
 const SYSTEM = [
@@ -131,6 +134,38 @@ export async function runAssistant(params: {
         maxTokens: 3500,
       });
       return { title: "Draft policy", text: r.text, modelUsed: r.modelUsed, usage: r.usage, downloadable: true };
+    }
+
+    if (action === "rewrite_answer") {
+      const docs = await retrieveDocs(`${q.question_text} ${q.expected_evidence ?? ""}`, clientId, 5);
+      const r = await generate({
+        system:
+          SYSTEM +
+          '\nRespond with JSON: {"response": string, "comments": string}.',
+        user:
+          `${base}\n\nPolicy and evidence excerpts available:\n${formatDocs(docs)}\n\n` +
+          (ask ? `Extra instruction from the user: ${ask}\n\n` : "") +
+          'Rewrite this answer so it is ready to send to the bank client. "response" is one of Yes, Partial, No, NA, or a short value if the question is not yes/no. Be honest: do NOT upgrade the response beyond what the excerpts support — if the evidence is partial, the response stays Partial and the comments say plainly what is covered and what is not. "comments" is formal and concise (max 180 words): state the control in place, name the specific document(s) and clause where identifiable, and mention frequency or scope where relevant. Do not include advice to the IT team in the comments; this text goes to the client. Never include passwords, keys or other secrets.',
+        json: true,
+        maxTokens: 1500,
+      });
+      let parsed: { response?: unknown; comments?: unknown } = {};
+      try {
+        parsed = JSON.parse(r.text);
+      } catch {
+        throw new Error("The assistant returned something that could not be read. Please try again.");
+      }
+      const responseValue = typeof parsed.response === "string" ? parsed.response.trim() : "";
+      const answerText = typeof parsed.comments === "string" ? parsed.comments.trim() : "";
+      if (!responseValue || !answerText) throw new Error("The assistant did not return a complete answer. Please try again.");
+      return {
+        title: "Rewritten answer",
+        text: `## Response\n${responseValue}\n\n## Comments\n${answerText}`,
+        modelUsed: r.modelUsed,
+        usage: r.usage,
+        downloadable: false,
+        proposed: { responseValue, answerText },
+      };
     }
 
     // improve_policy

@@ -47,6 +47,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           source_scope = ${generated.sourceScope},
           embedding = ${generated.embeddingLiteral}::vector,
           prior_question_id = ${generated.priorQuestionId},
+          previous_response_value = response_value,
+          previous_answer_text = answer_text,
+          edited_by = null, edited_at = null,
           generated_by = ${generatedBy},
           model_used = ${generated.modelUsed},
           answer_status = 'ok', answer_error = null

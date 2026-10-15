@@ -161,3 +161,9 @@ create table if not exists ai_usage (
 );
 create index if not exists ai_usage_created_at_idx on ai_usage (created_at);
 update users set can_assist = true where role = 'admin';
+
+-- Hand-edited answers and one-step undo (the answer text/response before the last edit or regeneration).
+alter table questions add column if not exists edited_by text;
+alter table questions add column if not exists edited_at timestamptz;
+alter table questions add column if not exists previous_response_value text;
+alter table questions add column if not exists previous_answer_text text;
