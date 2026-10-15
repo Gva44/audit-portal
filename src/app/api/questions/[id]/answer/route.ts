@@ -4,7 +4,7 @@ import { generateAnswer } from "@/lib/questions";
 import { AUTH_COOKIE, verifySessionToken } from "@/lib/auth";
 import { fetchQuestions } from "@/lib/question-queries";
 
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -43,6 +43,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           embedding = ${generated.embeddingLiteral}::vector,
           prior_question_id = ${generated.priorQuestionId},
           generated_by = ${generatedBy},
+          model_used = ${generated.modelUsed},
           answer_status = 'ok', answer_error = null
       where id = ${id}
     `;

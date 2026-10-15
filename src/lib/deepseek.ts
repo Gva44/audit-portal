@@ -11,12 +11,12 @@ export function getDeepSeek(): OpenAI {
       throw new Error("DEEPSEEK_API_KEY environment variable is not set");
     }
     // Under load DeepSeek can hold a request open for minutes before starting. Give up
-    // after 50s (the answer route's limit is 60s) and let the caller report "busy";
+    // after 35s, leaving time for the Gemini backup within the answer route's limit and let the caller report "busy";
     // retries are handled in questions.ts, so the SDK's own are off.
     _client = new OpenAI({
       apiKey: process.env.DEEPSEEK_API_KEY,
       baseURL: "https://api.deepseek.com",
-      timeout: 50_000,
+      timeout: 35_000,
       maxRetries: 0,
     });
   }

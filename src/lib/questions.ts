@@ -68,6 +68,42 @@ async function generateJsonDeepSeek<T>(systemInstruction: string, userContent: s
   return JSON.parse(content) as T;
 }
 
+function errorText(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+// Gemini's free tier regularly answers 503 "high demand" for a moment, so one more try.
+async function generateJsonGeminiWithRetry<T>(systemInstruction: string, userContent: string): Promise<T> {
+  try {
+    return await generateJson<T>(systemInstruction, userContent);
+  } catch (err) {
+    if (!/\b(503|429|500)\b|UNAVAILABLE|high demand/i.test(errorText(err))) throw err;
+    await new Promise((resolve) => setTimeout(resolve, 2500));
+    return generateJson<T>(systemInstruction, userContent);
+  }
+}
+
+// DeepSeek is the main model for answers. If it fails or does not answer in time (it is
+// sometimes overloaded, and an unfunded balance fails the same way), Gemini answers that
+// one question instead so the team is never blocked. Which model answered is recorded.
+async function generateJsonResilient<T>(
+  systemInstruction: string,
+  userContent: string
+): Promise<{ data: T; modelUsed: string }> {
+  try {
+    return { data: await generateJsonDeepSeek<T>(systemInstruction, userContent), modelUsed: DEEPSEEK_MODEL };
+  } catch (deepSeekErr) {
+    try {
+      const data = await generateJsonGeminiWithRetry<T>(systemInstruction, userContent);
+      return { data, modelUsed: `${GENERATION_MODEL} (backup)` };
+    } catch (geminiErr) {
+      throw new Error(
+        `DeepSeek failed (${errorText(deepSeekErr).slice(0, 120)}) and the Gemini backup also failed (${errorText(geminiErr).slice(0, 120)}). Please try again in a minute.`
+      );
+    }
+  }
+}
+
 // Keeps extraction fast and within context comfortably even for large questionnaires;
 // a doc longer than this would need chunking, not needed at this scale.
 const MAX_QUESTIONNAIRE_INPUT_CHARS = 40000;
@@ -230,6 +266,8 @@ export type GeneratedAnswer = {
   // as reference context — both null when there's nothing to store.
   embeddingLiteral: string;
   priorQuestionId: string | null;
+  // Which model wrote the answer; "(backup)" means Gemini stepped in for DeepSeek.
+  modelUsed: string | null;
 };
 
 // Cosine-similarity cut-offs for how a question relates to one asked before. Deliberately
@@ -424,6 +462,7 @@ export async function generateAnswer(ctx: AnswerContext): Promise<GeneratedAnswe
       sourceScope: null,
       embeddingLiteral: vectorLiteral,
       priorQuestionId: priorMatch ? priorMatch.id : null,
+      modelUsed: null,
     };
   }
 
@@ -451,7 +490,7 @@ export async function generateAnswer(ctx: AnswerContext): Promise<GeneratedAnswe
     .filter(Boolean)
     .join("\n\n");
 
-  const parsed = await generateJsonDeepSeek<{
+  const { data: parsed, modelUsed } = await generateJsonResilient<{
     response?: unknown;
     comments?: unknown;
     confidenceScore?: unknown;
@@ -565,5 +604,6 @@ export async function generateAnswer(ctx: AnswerContext): Promise<GeneratedAnswe
     sourceScope,
     embeddingLiteral: vectorLiteral,
     priorQuestionId: priorMatch ? priorMatch.id : null,
+    modelUsed,
   };
 }

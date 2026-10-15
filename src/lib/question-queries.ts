@@ -10,7 +10,7 @@ export async function fetchQuestions(filter: { documentId?: string; questionId?:
            q.source_scope, q.prior_question_id, prior.question_text as prior_question_text,
            prior.answer_text as prior_answer_text, prior.response_value as prior_response_value,
            prior_doc.filename as prior_document_filename,
-           q.generated_by, generated_by_user.display_name as generated_by_display_name,
+           q.model_used, q.generated_by, generated_by_user.display_name as generated_by_display_name,
            q.answer_status, q.answer_error, q.created_at
     from questions q
     left join questions prior on prior.id = q.prior_question_id

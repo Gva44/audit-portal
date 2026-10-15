@@ -141,3 +141,5 @@ alter table questions add column if not exists recommendation text;
 -- Whether the supporting documents were client-specific, General, or both.
 alter table questions add column if not exists source_scope text;
 alter table questions add column if not exists expected_evidence text;
+
+alter table questions add column if not exists model_used text;
