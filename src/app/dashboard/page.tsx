@@ -8,6 +8,7 @@ import {
   AlertTriangle,
   ArrowRight,
   Building2,
+  ChevronDown,
   CircleDashed,
   FileWarning,
   History,
@@ -148,12 +149,12 @@ function DashboardContent() {
     router.replace(value === "all" ? "/dashboard" : `/dashboard?client=${value}`);
   }
 
-  const options = [
-    { id: "all", name: "All clients" },
-    ...(data?.clients ?? []),
-    { id: "general", name: "General" },
-  ];
-  const scopeName = options.find((o) => o.id === scope)?.name ?? "All clients";
+  const scopeName =
+    scope === "all"
+      ? "All clients"
+      : scope === "general"
+        ? "General"
+        : (data?.clients.find((c) => c.id === scope)?.name ?? "All clients");
 
   return (
     <div className="min-h-screen bg-background md:pl-[232px]">
@@ -164,20 +165,27 @@ function DashboardContent() {
             <h1 className="text-[28px] font-bold tracking-tight text-foreground">Dashboard</h1>
             <p className="mt-1.5 text-muted">Where each client stands, and where to pick up.</p>
           </div>
-          <div className="flex flex-wrap gap-1 rounded-xl bg-surface-hover p-1">
-            {options.map((o) => (
-              <button
-                key={o.id}
-                onClick={() => choose(o.id)}
-                className={`rounded-[9px] px-3.5 py-1.5 text-sm transition-colors ${
-                  scope === o.id
-                    ? "bg-surface font-semibold text-foreground shadow-[0_1px_2px_rgba(16,24,40,0.08)]"
-                    : "font-medium text-muted hover:text-foreground"
-                }`}
+          <div className="flex items-center gap-2.5">
+            <label htmlFor="dashboard-client" className="text-sm font-medium text-muted">
+              Client
+            </label>
+            <div className="relative">
+              <select
+                id="dashboard-client"
+                value={scope}
+                onChange={(e) => choose(e.target.value)}
+                className="min-w-[220px] appearance-none rounded-[10px] border border-border bg-surface py-2.5 pl-3.5 pr-10 text-sm font-semibold text-foreground outline-none transition-colors focus:border-accent"
               >
-                {o.name}
-              </button>
-            ))}
+                <option value="all">All clients</option>
+                {(data?.clients ?? []).map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+                <option value="general">General (shared documents)</option>
+              </select>
+              <ChevronDown size={15} className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-muted" />
+            </div>
           </div>
         </header>
 
@@ -192,7 +200,9 @@ function DashboardContent() {
         {data && (
           <>
             <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-              {data.cards.map((c) => {
+              {data.cards
+                .filter((c) => scope === "all" || scope === c.id)
+                .map((c) => {
                 const selected = scope === c.id;
                 return (
                   <div
