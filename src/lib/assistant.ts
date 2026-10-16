@@ -235,6 +235,7 @@ export async function runAssistant(params: {
 
   if (action === "evidence_checklist") {
     const withEvidence = questions.filter((q) => q.expected_evidence);
+    if (withEvidence.length === 0) throw new Error("None of these questions list the evidence the client expects, so there is nothing to build a checklist from. Check Column setup.");
     const r = await generate({
       system: SYSTEM,
       user:

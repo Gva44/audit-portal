@@ -39,6 +39,9 @@ function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
+// The AI sometimes writes "###" instead of "##" for headings; treat any of them as a heading.
+const HEADING = /^#{2,4}\s+/;
+
 // Word opens an HTML file saved as .doc, so no extra library is needed for a downloadable draft.
 function downloadWord(title: string, text: string) {
   const body = text
@@ -46,7 +49,7 @@ function downloadWord(title: string, text: string) {
     .map((line) => {
       const t = line.trim();
       if (!t) return "";
-      if (t.startsWith("## ")) return `<h2>${escapeHtml(t.slice(3))}</h2>`;
+      if (HEADING.test(t)) return `<h2>${escapeHtml(t.replace(HEADING, ""))}</h2>`;
       if (/^AI DRAFT/i.test(t)) return `<p style="color:#b45309;font-weight:bold">${escapeHtml(t)}</p>`;
       if (t.startsWith("- ")) return `<p style="margin-left:18pt">&bull; ${escapeHtml(t.slice(2))}</p>`;
       return `<p>${escapeHtml(t)}</p>`;
@@ -70,10 +73,10 @@ function RenderedText({ text }: { text: string }) {
       {text.split("\n").map((line, i) => {
         const t = line.trim();
         if (!t) return <div key={i} className="h-1" />;
-        if (t.startsWith("## ")) {
+        if (HEADING.test(t)) {
           return (
             <h4 key={i} className="pt-2 text-[13px] font-bold uppercase tracking-[0.04em] text-foreground">
-              {t.slice(3)}
+              {t.replace(HEADING, "")}
             </h4>
           );
         }

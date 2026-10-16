@@ -1,9 +1,10 @@
 import { sql } from "./db";
+import { findExpectedEvidence } from "./expected-evidence";
 
 // One query shape for a question plus everything the review UI shows alongside it: last
 // year's matched question/answer and who generated the answer.
 export async function fetchQuestions(filter: { documentId?: string; questionId?: string }) {
-  return sql`
+  const rows = await sql`
     select q.id, q.document_id, q.position, q.question_text, q.row_data, q.expected_evidence,
            q.answer_text, q.citations, q.response_value, q.confidence_level, q.confidence_score,
            q.score, q.suggested_action, q.comparison_status, q.comparison_note, q.recommendation,
@@ -23,4 +24,10 @@ export async function fetchQuestions(filter: { documentId?: string; questionId?:
       and (${filter.questionId ?? null}::uuid is null or q.id = ${filter.questionId ?? null}::uuid)
     order by q.position asc
   `;
+  // Fill in the evidence the client expects for questions saved before it was stored per row.
+  for (const q of rows) {
+    q.expected_evidence =
+      (q.expected_evidence as string | null) ?? findExpectedEvidence(q.row_data as Record<string, string> | null);
+  }
+  return rows;
 }

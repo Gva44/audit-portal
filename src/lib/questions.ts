@@ -1,4 +1,5 @@
 import { sql } from "./db";
+import { findExpectedEvidence } from "./expected-evidence";
 import { generateEmbedding, toVectorLiteral } from "./embeddings";
 import { getGemini } from "./gemini";
 import { generate, type Usage } from "./ai";
@@ -154,19 +155,6 @@ export async function interpretColumnInstructions(
     responseCol: toIdx(parsed.responseCol),
     commentsCol: toIdx(parsed.commentsCol),
   };
-}
-
-// Fallback for questions saved before expected_evidence was stored per row: looks for a
-// column that names required evidence (common in bank DD questionnaires, e.g.
-// "Documents / Information Needed").
-const EVIDENCE_HEADER_PATTERN = /evidence|document.*need|information.*need|required/i;
-
-function findExpectedEvidence(rowData: Record<string, string> | null | undefined): string | null {
-  if (!rowData) return null;
-  for (const [header, value] of Object.entries(rowData)) {
-    if (EVIDENCE_HEADER_PATTERN.test(header) && value.trim()) return value.trim();
-  }
-  return null;
 }
 
 const MAX_RETRIEVED_DOCS = 6;
