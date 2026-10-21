@@ -23,8 +23,8 @@ const STEPS = [
 export default function LoginPage() {
   const googleEnabled = Boolean(process.env.GOOGLE_OAUTH_CLIENT_ID && process.env.GOOGLE_OAUTH_CLIENT_SECRET);
   return (
-    <div className="flex min-h-screen flex-wrap bg-background">
-      <main className="flex min-h-screen min-w-0 flex-1 basis-[480px] flex-col justify-between px-8 py-12 md:px-14">
+    <div className="flex min-h-dvh flex-wrap bg-background lg:h-dvh lg:flex-nowrap lg:overflow-hidden">
+      <main className="flex min-h-dvh min-w-0 flex-1 basis-[480px] flex-col justify-between gap-8 px-8 py-8 md:px-14 lg:h-full lg:min-h-0 lg:overflow-y-auto">
         <div className="flex items-center gap-2.5">
           <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-foreground text-surface">
             <ShieldCheck size={15} strokeWidth={2.25} />
@@ -39,13 +39,13 @@ export default function LoginPage() {
         <p className="text-xs text-muted-2">Internal use only</p>
       </main>
 
-      <section className="hidden min-w-0 flex-1 basis-[440px] flex-col justify-center bg-[#eaf0ff] px-12 py-12 lg:flex">
-        <div className="mx-auto flex w-full max-w-[520px] flex-col gap-7">
+      <section className="hidden min-w-0 flex-1 basis-[440px] flex-col justify-center bg-[#eaf0ff] px-12 py-6 lg:flex lg:h-full lg:overflow-hidden">
+        <div className="mx-auto flex w-full max-w-[520px] flex-col gap-[clamp(12px,2.6vh,28px)]">
           {/* eslint-disable-next-line @next/next/no-img-element -- static decorative illustration */}
           <img
             src="/login-illustration.webp"
             alt="Policy documents flowing into a checked questionnaire, then a completed response"
-            className="block h-auto w-full rounded-[20px] mix-blend-multiply"
+            className="mx-auto block h-auto max-h-[28vh] w-auto max-w-full rounded-[20px] object-contain mix-blend-multiply"
           />
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-accent">From policy to answer</p>
@@ -53,7 +53,7 @@ export default function LoginPage() {
               Answer every client questionnaire from your own documents.
             </h2>
           </div>
-          <ol className="flex flex-col gap-4">
+          <ol className="flex flex-col gap-[clamp(10px,2vh,16px)]">
             {STEPS.map((s, i) => (
               <li key={s.title} className="flex items-start gap-3.5">
                 <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-surface font-mono text-xs text-accent shadow-[0_1px_2px_rgba(16,24,40,0.08)]">
