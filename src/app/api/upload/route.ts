@@ -7,6 +7,7 @@ import { getClientFolderId } from "@/lib/clients";
 import { getSessionUser } from "@/lib/session";
 import type { ColumnConfig } from "@/lib/questionnaire-table";
 import { sql, type Category } from "@/lib/db";
+import { isEncryptedOffice, looksEncryptedPdf, PROTECTED_FILE_MESSAGE } from "@/lib/protected-file";
 
 // Allow extra time for larger PDFs / Gemini OCR + embedding on Vercel.
 // Note: the whole file travels through this function (Drive has no simple presigned-PUT
@@ -59,6 +60,11 @@ export async function POST(request: NextRequest) {
 
   const buffer = Buffer.from(await file.arrayBuffer());
 
+  // A password-protected Word/Excel file cannot be read, so refuse it before storing anything.
+  if (isEncryptedOffice(buffer)) {
+    return NextResponse.json({ error: PROTECTED_FILE_MESSAGE, code: "password_protected" }, { status: 422 });
+  }
+
   const folderId = clientId ? await getClientFolderId(clientId) : null;
   const { id: driveFileId, webViewLink } = await uploadFile(buffer, file.name, file.type, folderId);
 
@@ -69,7 +75,12 @@ export async function POST(request: NextRequest) {
     extractedText = await extractDocumentText(buffer, file.type, file.name);
   } catch (err) {
     extractionStatus = "failed";
-    extractionError = err instanceof Error ? err.message : "Unknown extraction error";
+    extractionError =
+      file.type === "application/pdf" && looksEncryptedPdf(buffer)
+        ? PROTECTED_FILE_MESSAGE
+        : err instanceof Error
+          ? err.message
+          : "Unknown extraction error";
   }
 
   let embeddingLiteral: string | null = null;

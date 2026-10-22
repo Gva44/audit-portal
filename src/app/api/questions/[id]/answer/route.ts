@@ -4,6 +4,7 @@ import { generateAnswer } from "@/lib/questions";
 import { getSessionUser } from "@/lib/session";
 import { checkAiAccess, logAiUsage } from "@/lib/ai-control";
 import { fetchQuestions } from "@/lib/question-queries";
+import { asFormat, DEFAULT_FORMAT } from "@/lib/answer-format";
 
 export const maxDuration = 120;
 
@@ -14,8 +15,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   if (!access.ok) return NextResponse.json({ error: access.reason }, { status: access.status });
   const generatedBy = user!.username;
 
+  const body = await request.json().catch(() => ({}));
   const existing = await sql`
-    select q.question_text, q.row_data, q.expected_evidence, q.document_id, d.client_id
+    select q.question_text, q.row_data, q.expected_evidence, q.document_id, d.client_id, d.answer_format as doc_format
     from questions q
     join documents d on d.id = q.document_id
     where q.id = ${id}
@@ -23,8 +25,12 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const question = existing[0];
   if (!question) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
+  // The format the person picked, else the questionnaire's default.
+  const format = asFormat(body?.format) ?? asFormat(question.doc_format) ?? DEFAULT_FORMAT;
+
   try {
     const generated = await generateAnswer({
+      format,
       questionText: question.question_text as string,
       rowData: question.row_data as Record<string, string> | null,
       expectedEvidence: question.expected_evidence as string | null,
@@ -52,6 +58,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           edited_by = null, edited_at = null, updated_at = now(),
           generated_by = ${generatedBy},
           model_used = ${generated.modelUsed},
+          answer_format = ${format},
           answer_status = 'ok', answer_error = null
       where id = ${id}
     `;

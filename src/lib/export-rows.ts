@@ -24,6 +24,7 @@ export function toExportRows(rows: Row[]): QuestionExportRow[] {
     prior_response_value: q.prior_response_value as string | null,
     prior_answer_text: q.prior_answer_text as string | null,
     generated_by_display_name: (q.generated_by_display_name as string | null) ?? (q.generated_by as string | null),
+    answer_format: q.answer_format as string | null,
     edited_by_display_name: q.edited_by ? ((q.edited_by_display_name as string | null) ?? (q.edited_by as string)) : null,
   }));
 }

@@ -3,6 +3,7 @@ import { sql } from "@/lib/db";
 import { buildQuestionnaireExport } from "@/lib/questionnaire-export";
 import { fetchQuestions } from "@/lib/question-queries";
 import { toExportRows } from "@/lib/export-rows";
+import { asAllowed } from "@/lib/answer-format";
 import type { ColumnConfig } from "@/lib/questionnaire-table";
 
 // The client-facing file: original columns with our answers filled in, nothing internal.
@@ -10,7 +11,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
   const { id } = await params;
 
   const docRows = await sql`
-    select filename, category, column_headers, column_config from documents where id = ${id}
+    select filename, category, column_headers, column_config, allowed_answers from documents where id = ${id}
   `;
   const doc = docRows[0];
   if (!doc) return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -22,7 +23,8 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
   const buffer = await buildQuestionnaireExport(
     (doc.column_headers as string[] | null) ?? null,
     toExportRows(questions),
-    (doc.column_config as ColumnConfig | null) ?? null
+    (doc.column_config as ColumnConfig | null) ?? null,
+    asAllowed(doc.allowed_answers)
   );
 
   const baseName = String(doc.filename).replace(/\.[^.]+$/, "");

@@ -172,3 +172,9 @@ alter table questions add column if not exists previous_answer_text text;
 alter table questions add column if not exists updated_at timestamptz;
 update questions set updated_at = created_at where updated_at is null;
 alter table documents add column if not exists uploaded_by text;
+
+-- Brief / Short answers and what the client's response column accepts.
+alter table documents add column if not exists answer_format text not null default 'short';
+alter table documents add column if not exists allowed_answers text not null default 'auto';
+alter table documents add column if not exists columns_confirmed boolean not null default false;
+alter table questions add column if not exists answer_format text;

@@ -5,6 +5,7 @@ import { getGemini } from "./gemini";
 import { generate, type Usage } from "./ai";
 import { buildTable, readGrid, toQuestionRows, type ColumnConfig, type QuestionRow } from "./questionnaire-table";
 import { XLSX_MIME } from "./extract";
+import { DEFAULT_FORMAT, type AnswerFormat } from "./answer-format";
 
 const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
@@ -364,10 +365,12 @@ export type AnswerContext = {
   expectedEvidence?: string | null;
   documentId: string;
   clientId: string | null;
+  format?: AnswerFormat;
 };
 
 export async function generateAnswer(ctx: AnswerContext): Promise<GeneratedAnswer> {
   const { questionText, rowData, clientId, documentId } = ctx;
+  const format = ctx.format ?? DEFAULT_FORMAT;
   const vectorLiteral = toVectorLiteral(await generateEmbedding(questionText));
 
   // Hybrid retrieval: blend keyword relevance (ts_rank) with semantic similarity, the
@@ -399,7 +402,10 @@ export async function generateAnswer(ctx: AnswerContext): Promise<GeneratedAnswe
   if (rows.length === 0) {
     return {
       responseValue: "No",
-      comments: "No supporting policy found – requires manual review.",
+      comments:
+        format === "short"
+          ? "- No supporting policy or evidence in place"
+          : "No supporting policy or evidence is currently in place.",
       citations: [],
       confidenceLevel: "low",
       confidenceScore: 0,
@@ -463,13 +469,17 @@ export async function generateAnswer(ctx: AnswerContext): Promise<GeneratedAnswe
       'whenever related content exists. "No" ONLY if the excerpts contain nothing relevant, or clearly ' +
       'contradict the requirement. "NA" if the question does not apply, or a short free-text value if the ' +
       "question is not a yes/no/na question (e.g. asks for a description, a number, or a list).\n" +
-      "- comments: a concise (max 200 words), formal justification suitable for submission to a bank. " +
-      "State the control/process in place, cite the specific document (and section/clause if " +
-      "identifiable from the excerpt), and mention frequency, scope, or metrics where relevant. If the " +
-      "question lists sub-points (a, b, c ...), say which are covered and by which document, and which are " +
-      "not covered. If partial, state clearly what is missing. Put this wording in comments, never in the " +
-      'response field. Only if the excerpts contain nothing relevant at all, use exactly: "No supporting ' +
-      'policy found – requires manual review."\n' +
+      "- comments: the remark that goes into the CLIENT's file, so keep it precise and to the point. State only " +
+      "what IS in place. Never describe what is missing or not covered (that goes in recommendation). Do not " +
+      "name documents, policy IDs, version numbers or section numbers (document names go in a separate evidence " +
+      "column). Do not explain more than was asked. " +
+      (format === "brief"
+        ? "BRIEF format: one or two plain sentences, at most 40 words in total. "
+        : 'SHORT format: two or three bullet lines, each starting with "- " and at most 15 words, naming the ' +
+          "controls or measures in place. No intro line and no closing line. ") +
+      "If the question asks for a specific value (a name, number, frequency, vendor), give just that value. " +
+      'If the response is "No", say in one short line that it is not currently in place. Put this wording in ' +
+      "comments, never in the response field.\n" +
       "- confidenceScore (0 to 1): how well the excerpts support the answer. 0.8+ only if at least two " +
       "strong, unambiguous matches fully cover the question and any evidence the client expects; " +
       "0.5-0.79 if one strong but incomplete match or the answer is only partly covered; below 0.5 if " +
@@ -485,10 +495,12 @@ export async function generateAnswer(ctx: AnswerContext): Promise<GeneratedAnswe
           "two questions; otherwise null.\n" +
           "- recommendation: tell the IT team in one to three sentences whether last year's answer can be " +
           "reused as-is, or what to update in the response, remark or evidence given the current excerpts, " +
-          "and anything better that can now be said than last year.\n"
+          "and anything better that can now be said than last year. If the response is Partial or No, also say " +
+          "what is not covered.\n"
         : '- recommendation: required whenever the response is "Partial" or "No" — one to three sentences ' +
-          "naming the policy section to add or amend, or the evidence to prepare, so the question can be " +
-          "answered in full; otherwise null.\n") +
+          "saying plainly what is NOT covered and naming the policy section to add or amend, or the evidence to " +
+          "prepare, so the question can be answered in full; otherwise null. This is internal and is where gaps " +
+          "belong.\n") +
       '\nRespond with JSON: {"response": string, "comments": string, "confidenceScore": number, ' +
       '"suggestedAction": string|null, "supportingDocumentIds": string[], ' +
       '"comparisonStatus": string|null, "comparisonNote": string|null, "recommendation": string|null}. ' +

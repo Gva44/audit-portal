@@ -297,10 +297,18 @@ export default function UploadPage() {
           </p>
         )}
         {status.type === "error" && (
-          <p className="mt-4 flex items-center gap-2 text-sm text-danger">
-            <AlertCircle size={16} />
-            {status.message}
-          </p>
+          <div
+            role="alert"
+            className="mt-4 flex items-start gap-3 rounded-xl border border-danger-border bg-danger-soft px-4 py-3 text-sm text-danger"
+          >
+            <AlertCircle size={18} className="mt-0.5 shrink-0" />
+            <div>
+              {/password-protected/i.test(status.message) && (
+                <p className="font-semibold">Password-protected file: upload stopped</p>
+              )}
+              <p>{status.message}</p>
+            </div>
+          </div>
         )}
       </main>
     </div>

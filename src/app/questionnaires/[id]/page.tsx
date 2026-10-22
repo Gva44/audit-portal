@@ -4,6 +4,8 @@ import { use, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import Nav from "@/components/Nav";
 import { AnswerEditor, DocumentAssistant, QuestionAssistant } from "@/components/Assistant";
+import AnswerSetup from "@/components/AnswerSetup";
+import { asAllowed, clientResponse, resolveAllowed } from "@/lib/answer-format";
 import {
   AlertTriangle,
   ChevronDown,
@@ -53,6 +55,7 @@ type Question = {
   edited_at: string | null;
   previous_response_value: string | null;
   previous_answer_text: string | null;
+  answer_format: "brief" | "short" | null;
   generated_by: string | null;
   generated_by_display_name: string | null;
   answer_status: "pending" | "generating" | "ok" | "failed";
@@ -65,6 +68,8 @@ type ColumnConfig = {
   evidenceCol?: number | null;
   responseCol?: number | null;
   commentsCol?: number | null;
+  citationsCol?: number | null;
+  includeEvidence?: boolean;
 };
 
 type DocInfo = {
@@ -75,6 +80,9 @@ type DocInfo = {
   column_headers: string[] | null;
   column_config: ColumnConfig | null;
   column_instructions: string | null;
+  answer_format: "brief" | "short";
+  allowed_answers: string;
+  columns_confirmed: boolean;
 };
 
 function responseBadgeClasses(value: string): string {
@@ -124,7 +132,7 @@ function scoreOf(q: Question): number | null {
 
 type StatusFilter = "all" | "needs_review" | "pending" | "answered" | "differs";
 
-const COLUMN_FIELDS: { key: keyof ColumnConfig; label: string; hint: string }[] = [
+const COLUMN_FIELDS: { key: "questionCol" | "evidenceCol" | "responseCol" | "commentsCol"; label: string; hint: string }[] = [
   { key: "questionCol", label: "Questions are in", hint: "Auto-detect" },
   { key: "evidenceCol", label: "Evidence expected is in", hint: "Auto-detect" },
   { key: "responseCol", label: "Write the response into", hint: "Add a new column" },
@@ -147,7 +155,8 @@ export default function QuestionnairePage({ params }: { params: Promise<{ id: st
   const [comparing, setComparing] = useState(false);
   const [compareError, setCompareError] = useState<string | null>(null);
   const [setupOpen, setSetupOpen] = useState(false);
-  const [columnPicks, setColumnPicks] = useState<Record<keyof ColumnConfig, string>>({
+  const [format, setFormat] = useState<"brief" | "short">("short");
+  const [columnPicks, setColumnPicks] = useState<Record<"questionCol" | "evidenceCol" | "responseCol" | "commentsCol", string>>({
     questionCol: "",
     evidenceCol: "",
     responseCol: "",
@@ -195,6 +204,7 @@ export default function QuestionnairePage({ params }: { params: Promise<{ id: st
       setDoc(d);
       setQuestions(questionsData.questions ?? []);
       if (d) {
+        setFormat(d.answer_format === "brief" ? "brief" : "short");
         const cfg = d.column_config ?? {};
         const pick = (v: number | null | undefined) => (v == null ? "" : String(v));
         setColumnPicks({
@@ -243,10 +253,24 @@ export default function QuestionnairePage({ params }: { params: Promise<{ id: st
     return () => clearTimeout(t);
   }, [loading, doc, questions, runCompare]);
 
-  async function generateOne(questionId: string): Promise<boolean> {
+  async function chooseFormat(next: "brief" | "short") {
+    setFormat(next);
+    setDoc((d) => (d ? { ...d, answer_format: next } : d));
+    await fetch(`/api/documents/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ answerFormat: next }),
+    }).catch(() => {});
+  }
+
+  async function generateOne(questionId: string, withFormat?: "brief" | "short"): Promise<boolean> {
     setGeneratingIds((prev) => new Set(prev).add(questionId));
     try {
-      const res = await fetch(`/api/questions/${questionId}/answer`, { method: "POST" });
+      const res = await fetch(`/api/questions/${questionId}/answer`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ format: withFormat ?? format }),
+      });
       const data = await res.json().catch(() => ({}));
       if (data.question) {
         setQuestions((prev) => prev.map((q) => (q.id === questionId ? data.question : q)));
@@ -378,6 +402,14 @@ export default function QuestionnairePage({ params }: { params: Promise<{ id: st
     }
   }
 
+  const hasColumns = !!doc?.column_headers && doc.column_headers.length > 0;
+  const allowedAnswers = resolveAllowed(
+    asAllowed(doc?.allowed_answers),
+    doc?.column_headers ?? null,
+    doc?.column_config?.responseCol ?? null
+  );
+  const needsConfirm = hasColumns && !doc?.columns_confirmed;
+
   const isReady = (q: Question) => {
     const s = scoreOf(q);
     return s != null && s >= 8;
@@ -487,6 +519,7 @@ export default function QuestionnairePage({ params }: { params: Promise<{ id: st
                 <button
                   onClick={generateAll}
                   disabled={
+                    needsConfirm ||
                     generatingAll ||
                     generatingRange ||
                     questions.length === 0 ||
@@ -636,10 +669,37 @@ export default function QuestionnairePage({ params }: { params: Promise<{ id: st
               </p>
             )}
 
+            {hasColumns && (
+              <AnswerSetup
+                key={`${doc.id}-${doc.columns_confirmed}`}
+                documentId={id}
+                headers={doc.column_headers!}
+                config={doc.column_config}
+                allowedAnswers={doc.allowed_answers}
+                confirmed={doc.columns_confirmed}
+                onSaved={(saved) =>
+                  setDoc((d) =>
+                    d
+                      ? {
+                          ...d,
+                          column_config: { ...(d.column_config ?? {}), ...saved.column_config },
+                          allowed_answers: saved.allowed_answers,
+                          columns_confirmed: saved.columns_confirmed,
+                        }
+                      : d
+                  )
+                }
+                onOpenColumnSetup={() => {
+                  setSetupOpen(true);
+                  setTimeout(() => document.getElementById("column-setup")?.scrollIntoView({ behavior: "smooth" }), 50);
+                }}
+              />
+            )}
+
             {me?.canAssist && <DocumentAssistant documentId={id} answered={answeredCount} />}
 
             {doc.column_headers && doc.column_headers.length > 0 && (
-              <div className="rounded-[14px] border border-border bg-surface">
+              <div id="column-setup" className="rounded-[14px] border border-border bg-surface">
                 <button
                   onClick={() => setSetupOpen((v) => !v)}
                   className="flex w-full items-center justify-between px-4 py-3 text-left"
@@ -710,6 +770,41 @@ export default function QuestionnairePage({ params }: { params: Promise<{ id: st
             )}
 
             {questions.length > 0 && (
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-[14px] border border-border bg-surface px-4 py-3">
+                <span className="text-sm font-medium text-foreground">Answer style</span>
+                <div role="radiogroup" aria-label="Answer style" className="flex gap-1 rounded-xl bg-surface-hover p-1">
+                  {(
+                    [
+                      ["brief", "Brief"],
+                      ["short", "Short"],
+                    ] as const
+                  ).map(([value, label]) => (
+                    <button
+                      key={value}
+                      role="radio"
+                      aria-checked={format === value}
+                      onClick={() => chooseFormat(value)}
+                      className={`rounded-[9px] px-4 py-1.5 text-sm transition-colors ${
+                        format === value
+                          ? "bg-surface font-semibold text-foreground shadow-[0_1px_2px_rgba(16,24,40,0.08)]"
+                          : "font-medium text-muted hover:text-foreground"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <span className="text-xs text-muted">
+                  {format === "brief"
+                    ? "One or two sentences per answer."
+                    : "Two or three short bullet points per answer."}{" "}
+                  Applies to answers generated from now on. Change it between runs to mix styles, for example 1-20
+                  Brief and 21-40 Short.
+                </span>
+              </div>
+            )}
+
+            {questions.length > 0 && (
               <div className="flex flex-wrap items-center gap-2 rounded-[14px] border border-border bg-surface px-4 py-3">
                 <span className="text-sm text-muted">Or generate just questions</span>
                 <input
@@ -732,7 +827,7 @@ export default function QuestionnairePage({ params }: { params: Promise<{ id: st
                 <span className="text-sm text-muted">of {questions.length}</span>
                 <button
                   onClick={generateRange}
-                  disabled={generatingAll || generatingRange}
+                  disabled={needsConfirm || generatingAll || generatingRange}
                   className="ml-auto flex items-center gap-2 rounded-lg border border-border bg-background px-3.5 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {generatingRange ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
@@ -821,7 +916,7 @@ export default function QuestionnairePage({ params }: { params: Promise<{ id: st
                           }
                           generateOne(q.id);
                         }}
-                        disabled={isGenerating || generatingAll || generatingRange}
+                        disabled={needsConfirm || isGenerating || generatingAll || generatingRange}
                         className="flex shrink-0 items-center gap-1.5 rounded-full border border-border px-3 py-1 text-xs font-medium text-muted transition-colors hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         {isGenerating ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
@@ -871,6 +966,15 @@ export default function QuestionnairePage({ params }: { params: Promise<{ id: st
                               {q.response_value}
                             </span>
                           )}
+                          {q.response_value &&
+                            clientResponse(q.response_value, allowedAnswers) !== q.response_value && (
+                              <span
+                                title="The client's column only accepts Yes or No, so this is what goes into the client file. The IT review report keeps the full answer."
+                                className="rounded-full border border-border px-2 py-0.5 text-xs font-medium text-muted"
+                              >
+                                Client file: {clientResponse(q.response_value, allowedAnswers)}
+                              </span>
+                            )}
                           {band && score != null && (
                             <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${band.classes}`}>
                               {score.toFixed(1)} / 10 · {band.label}
@@ -882,8 +986,50 @@ export default function QuestionnairePage({ params }: { params: Promise<{ id: st
                               Needs review
                             </span>
                           )}
+                          <div
+                            role="radiogroup"
+                            aria-label="Answer style for this question"
+                            className="ml-auto flex gap-0.5 rounded-lg bg-surface p-0.5"
+                          >
+                            {(
+                              [
+                                ["brief", "Brief"],
+                                ["short", "Short"],
+                              ] as const
+                            ).map(([value, label]) => {
+                              const active = q.answer_format === value;
+                              return (
+                                <button
+                                  key={value}
+                                  role="radio"
+                                  aria-checked={active}
+                                  disabled={needsConfirm || isGenerating || generatingAll || generatingRange}
+                                  title={active ? `This answer is in the ${label} style` : `Rewrite this answer in the ${label} style`}
+                                  onClick={() => {
+                                    if (active) return;
+                                    if (
+                                      q.edited_by &&
+                                      !confirm(
+                                        "This answer was edited by hand. Switching style regenerates it. You can bring your version back with Restore previous answer. Continue?"
+                                      )
+                                    ) {
+                                      return;
+                                    }
+                                    generateOne(q.id, value);
+                                  }}
+                                  className={`rounded-md px-2.5 py-0.5 text-xs transition-colors disabled:cursor-not-allowed ${
+                                    active
+                                      ? "bg-surface-hover font-semibold text-foreground"
+                                      : "font-medium text-muted hover:text-foreground disabled:opacity-50"
+                                  }`}
+                                >
+                                  {label}
+                                </button>
+                              );
+                            })}
+                          </div>
                         </div>
-                        <p className="mt-2 text-sm leading-relaxed text-foreground">{q.answer_text}</p>
+                        <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-foreground">{q.answer_text}</p>
                         {q.comparison_note && (
                           <p className="mt-2 text-xs text-muted">
                             <span className="font-medium">What changed in the question:</span> {q.comparison_note}

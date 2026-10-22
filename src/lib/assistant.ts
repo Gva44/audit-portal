@@ -145,7 +145,11 @@ export async function runAssistant(params: {
         user:
           `${base}\n\nPolicy and evidence excerpts available:\n${formatDocs(docs)}\n\n` +
           (ask ? `Extra instruction from the user: ${ask}\n\n` : "") +
-          'Rewrite this answer so it is ready to send to the bank client. "response" is one of Yes, Partial, No, NA, or a short value if the question is not yes/no. Be honest: do NOT upgrade the response beyond what the excerpts support — if the evidence is partial, the response stays Partial and the comments say plainly what is covered and what is not. "comments" is formal and concise (max 180 words): state the control in place, name the specific document(s) and clause where identifiable, and mention frequency or scope where relevant. Do not include advice to the IT team in the comments; this text goes to the client. Never include passwords, keys or other secrets.',
+          'Rewrite this answer so it is ready to send to the bank client. "response" is one of Yes, Partial, No, NA, or a short value if the question is not yes/no. Be honest: do NOT upgrade the response beyond what the excerpts support — if the evidence is partial, the response stays Partial. "comments" goes into the client file, so state only what IS in place and never what is missing; do not name documents, policy IDs or section numbers; do not explain more than was asked. ' +
+          (q.answer_format === "brief"
+            ? "Use the BRIEF format: one or two plain sentences, at most 40 words. "
+            : 'Use the SHORT format: two or three bullet lines, each starting with "- " and at most 15 words, no intro or closing line. ') +
+          "If the response is No, say in one short line that it is not currently in place. No advice to the IT team in the comments. Never include passwords, keys or other secrets.",
         json: true,
         maxTokens: 1500,
       });

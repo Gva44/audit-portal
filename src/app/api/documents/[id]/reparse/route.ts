@@ -20,6 +20,8 @@ function cleanConfig(raw: unknown): ColumnConfig {
     evidenceCol: idx(c.evidenceCol),
     responseCol: idx(c.responseCol),
     commentsCol: idx(c.commentsCol),
+    citationsCol: idx(c.citationsCol),
+    includeEvidence: c.includeEvidence === false ? false : true,
   };
 }
 
@@ -28,7 +30,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const body = await request.json().catch(() => ({}));
 
   const rows = await sql`
-    select category, drive_file_id, mime_type, extracted_text from documents where id = ${id}
+    select category, drive_file_id, mime_type, extracted_text, column_config from documents where id = ${id}
   `;
   const doc = rows[0];
   if (!doc) return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -43,6 +45,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       ? await interpretColumnInstructions(buffer, doc.mime_type as string, instructions)
       : cleanConfig(body.config);
 
+    // Instructions don't mention where evidence goes, so keep what was chosen before.
+    const before = (doc.column_config as ColumnConfig | null) ?? {};
+    if (instructions) {
+      config.citationsCol = before.citationsCol ?? null;
+      config.includeEvidence = before.includeEvidence;
+    }
+
     await sql`delete from questions where document_id = ${id}`;
     const count = await parseAndSaveQuestions(
       id,
@@ -54,7 +63,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     await sql`
       update documents
       set column_config = ${JSON.stringify(config)}::jsonb,
-          column_instructions = ${instructions || null}
+          column_instructions = ${instructions || null},
+          columns_confirmed = true
       where id = ${id}
     `;
     return NextResponse.json({ count, config });

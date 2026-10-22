@@ -13,6 +13,10 @@ export type ColumnConfig = {
   evidenceCol?: number | null;
   responseCol?: number | null;
   commentsCol?: number | null;
+  // Where document names go in the client file; null adds a new column.
+  citationsCol?: number | null;
+  // false leaves document names out of the client file entirely.
+  includeEvidence?: boolean;
 };
 
 export type Grid = { sheets: string[]; sheet: string | null; rows: string[][] };

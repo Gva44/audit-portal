@@ -1,6 +1,7 @@
 import ExcelJS from "exceljs";
 import type { Citation } from "./questions";
 import type { ColumnConfig } from "./questionnaire-table";
+import { clientResponse, remarkWithAnswer, resolveAllowed, type AllowedAnswers } from "./answer-format";
 
 export type QuestionExportRow = {
   position: number;
@@ -25,6 +26,7 @@ export type QuestionExportRow = {
   prior_answer_text?: string | null;
   generated_by_display_name?: string | null;
   edited_by_display_name?: string | null;
+  answer_format?: string | null;
 };
 
 async function toBuffer(workbook: ExcelJS.Workbook): Promise<Buffer> {
@@ -38,13 +40,17 @@ async function toBuffer(workbook: ExcelJS.Workbook): Promise<Buffer> {
 }
 
 // The file that goes back to the client: their original columns with our response and
-// comments filled in (into the columns the uploader pointed at, if any, otherwise
-// appended) plus an evidence column. No scores or internal notes — those live in the
-// separate IT review report.
+// remark filled in (into the columns the uploader pointed at, if any, otherwise appended),
+// plus the supporting document names where the client has room for them. No scores or
+// internal notes: those live in the separate IT review report.
+//
+// The response follows what the client's column accepts: when it is Yes/No only, Partial is
+// written as Yes (something covers it) and No means nothing covers it.
 export async function buildQuestionnaireExport(
   columnHeaders: string[] | null,
   questions: QuestionExportRow[],
-  config?: ColumnConfig | null
+  config?: ColumnConfig | null,
+  allowedSetting?: AllowedAnswers | null
 ): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
   const worksheet = workbook.addWorksheet("Answers");
@@ -57,26 +63,40 @@ export async function buildQuestionnaireExport(
     hasHeaders && inRange(config?.commentsCol) && config?.commentsCol !== responseIdx
       ? (config!.commentsCol as number)
       : null;
+  const citationsIdx =
+    hasHeaders &&
+    inRange(config?.citationsCol) &&
+    config?.citationsCol !== responseIdx &&
+    config?.citationsCol !== commentsIdx
+      ? (config!.citationsCol as number)
+      : null;
+  const includeEvidence = config?.includeEvidence !== false;
+  const allowed = resolveAllowed(allowedSetting, columnHeaders, responseIdx);
+  const noResponseColumn = allowed === "none";
 
   const appended: string[] = [];
-  if (responseIdx === null) appended.push("Response");
+  if (!noResponseColumn && responseIdx === null) appended.push("Response");
   if (commentsIdx === null) appended.push("Comments");
-  appended.push("Evidence / Citations");
+  if (includeEvidence && citationsIdx === null) appended.push("Evidence / Citations");
   worksheet.addRow([...headers, ...appended]);
 
   for (const q of questions) {
     const citationText = q.citations.map((c) => c.filename).join("; ");
+    const response = clientResponse(q.response_value, noResponseColumn ? "yesno" : allowed);
+    const remark = noResponseColumn ? remarkWithAnswer(response, q.answer_text) : (q.answer_text ?? "");
     const cells: string[] = hasHeaders
       ? columnHeaders.map((h) => q.row_data?.[h] ?? "")
       : [String(q.position + 1), q.question_text];
-    if (responseIdx !== null && q.response_value) cells[responseIdx] = q.response_value;
-    if (commentsIdx !== null && q.answer_text) cells[commentsIdx] = q.answer_text;
+    if (!noResponseColumn && responseIdx !== null && response) cells[responseIdx] = response;
+    if (commentsIdx !== null && remark) cells[commentsIdx] = remark;
+    if (includeEvidence && citationsIdx !== null && citationText) cells[citationsIdx] = citationText;
 
     const extra: string[] = [];
-    if (responseIdx === null) extra.push(q.response_value ?? "");
-    if (commentsIdx === null) extra.push(q.answer_text ?? "");
-    extra.push(citationText);
-    worksheet.addRow([...cells, ...extra]);
+    if (!noResponseColumn && responseIdx === null) extra.push(response);
+    if (commentsIdx === null) extra.push(remark);
+    if (includeEvidence && citationsIdx === null) extra.push(citationText);
+    const row = worksheet.addRow([...cells, ...extra]);
+    row.alignment = { vertical: "top", wrapText: true };
   }
 
   worksheet.getRow(1).font = { bold: true };
@@ -114,7 +134,8 @@ const SCOPE_LABEL: Record<string, string> = {
 export async function buildReviewReport(
   clientName: string | null,
   documentName: string,
-  questions: QuestionExportRow[]
+  questions: QuestionExportRow[],
+  allowed: Exclude<AllowedAnswers, "auto"> = "yesnopartialna"
 ): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
 
@@ -153,7 +174,9 @@ export async function buildReviewReport(
     ["#", 5],
     ["Question", 50],
     ["Evidence the client expects", 36],
-    ["Response", 12],
+    ["Response (internal)", 14],
+    ["Response in client file", 16],
+    ["Format", 9],
     ["Comments / answer", 60],
     ["Score (0-10)", 11],
     ["Readiness", 16],
@@ -178,6 +201,8 @@ export async function buildReviewReport(
       q.question_text,
       q.expected_evidence ?? "",
       q.response_value ?? "",
+      q.answer_status === "ok" ? clientResponse(q.response_value, allowed) : "",
+      q.answer_format ? (q.answer_format === "brief" ? "Brief" : "Short") : "",
       q.answer_text ?? (q.answer_status === "ok" ? "" : "Not yet answered"),
       score != null && !Number.isNaN(score) ? score : "",
       band ? BAND_LABEL[band] : "",
@@ -194,7 +219,7 @@ export async function buildReviewReport(
     ]);
     row.alignment = { vertical: "top", wrapText: true };
     if (band) {
-      for (const col of [6, 7]) {
+      for (const col of [8, 9]) {
         row.getCell(col).fill = { type: "pattern", pattern: "solid", fgColor: { argb: BAND_FILL[band] } };
       }
     }
