@@ -181,3 +181,6 @@ alter table questions add column if not exists answer_format text;
 
 -- Internal note: what the client asked for that the documents do not directly evidence, and what the answer used instead.
 alter table questions add column if not exists gap_note text;
+
+-- Internal: documents to add so the question could be answered in full.
+alter table questions add column if not exists documents_to_add jsonb;

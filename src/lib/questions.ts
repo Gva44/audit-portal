@@ -180,6 +180,8 @@ export type GeneratedAnswer = {
   recommendation: string | null;
   // Internal: what the client asked for that the documents do not directly evidence, and what was used instead.
   gapNote: string | null;
+  // Internal: short list of documents or evidence to add so the question could be answered in full.
+  documentsToAdd: string[];
   sourceScope: SourceScope | null;
   // The question's own embedding (for persisting so *future* similar questions, e.g. next
   // year's questionnaire, can find this one), and which prior question (if any) was used
@@ -408,6 +410,7 @@ type ParsedAnswer = {
   comparisonNote?: unknown;
   recommendation?: unknown;
   gapNote?: unknown;
+  documentsToAdd?: unknown;
 };
 
 function addUsage(a: Usage, b: Usage): Usage {
@@ -456,6 +459,7 @@ export async function generateAnswer(ctx: AnswerContext): Promise<GeneratedAnswe
         ? "No current policy or evidence supports this. Last year's answer is shown for reference only — verify it before reusing."
         : null,
       gapNote: "There are no policy or evidence documents in the library to answer this from, so IT needs to write the answer.",
+      documentsToAdd: [],
       sourceScope: null,
       embeddingLiteral: vectorLiteral,
       priorQuestionId: priorMatch ? priorMatch.id : null,
@@ -495,6 +499,7 @@ export async function generateAnswer(ctx: AnswerContext): Promise<GeneratedAnswe
     "- gapNote: INTERNAL, for the IT team, never sent to the client. Null when response is Yes. Otherwise one or two " +
     "plain sentences: what the client is really asking for, what the excerpts do not directly evidence, and which " +
     "related control the answer used instead. This is where \"not there\" is stated.\n" +
+    "- documentsToAdd: INTERNAL list of 1 to 3 short items (each under 18 words) naming the documents or evidence the company should add so this question could be answered in full, for example \"Backup procedure stating copies kept and frequency\". Empty array when response is Yes.\n" +
     "- confidenceScore (0 to 1): how well the excerpts support the answer. 0.8+ only if at least two strong, " +
     "unambiguous matches fully cover the question and any evidence the client expects; 0.5-0.79 if one strong but " +
     "incomplete match or the answer rests on related controls; below 0.5 if the evidence is weak or indirect.\n" +
@@ -512,7 +517,7 @@ export async function generateAnswer(ctx: AnswerContext): Promise<GeneratedAnswe
         "policy section to add or amend, or the evidence to prepare, so the question can be answered in full; " +
         "otherwise null. Internal only.\n") +
     '\nRespond with JSON: {"response": string, "comments": string, "confidenceScore": number, ' +
-    '"suggestedAction": string|null, "supportingDocumentIds": string[], "gapNote": string|null, ' +
+    '"suggestedAction": string|null, "supportingDocumentIds": string[], "gapNote": string|null, "documentsToAdd": string[], ' +
     '"comparisonStatus": string|null, "comparisonNote": string|null, "recommendation": string|null}. ' +
     "supportingDocumentIds must be a subset of the doc ids shown in the excerpts, limited to the ones that actually " +
     "support the answer.";
@@ -634,6 +639,10 @@ export async function generateAnswer(ctx: AnswerContext): Promise<GeneratedAnswe
     comparisonNote: optionalText(parsed.comparisonNote),
     recommendation,
     gapNote: responseValue.toLowerCase() === "yes" ? null : optionalText(parsed.gapNote),
+    documentsToAdd:
+      responseValue.toLowerCase() === "yes" || !Array.isArray(parsed.documentsToAdd)
+        ? []
+        : parsed.documentsToAdd.filter((d): d is string => typeof d === "string" && d.trim().length > 0).map((d) => d.trim()).slice(0, 3),
     sourceScope,
     embeddingLiteral: vectorLiteral,
     priorQuestionId: priorMatch ? priorMatch.id : null,

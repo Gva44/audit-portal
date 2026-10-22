@@ -8,6 +8,7 @@ import AnswerSetup from "@/components/AnswerSetup";
 import { asAllowed, clientResponse, resolveAllowed } from "@/lib/answer-format";
 import {
   AlertTriangle,
+  Check,
   ChevronDown,
   CheckCircle2,
   ClipboardCheck,
@@ -17,6 +18,7 @@ import {
   FileText,
   History,
   Loader2,
+  Lock,
   RotateCcw,
   Settings2,
   Sparkles,
@@ -57,6 +59,7 @@ type Question = {
   previous_answer_text: string | null;
   answer_format: "brief" | "short" | null;
   gap_note: string | null;
+  documents_to_add: string[] | null;
   generated_by: string | null;
   generated_by_display_name: string | null;
   answer_status: "pending" | "generating" | "ok" | "failed";
@@ -987,11 +990,12 @@ export default function QuestionnairePage({ params }: { params: Promise<{ id: st
                     )}
 
                     {q.answer_status === "ok" && (q.answer_text || q.response_value) && (
-                      <div className="mt-4 rounded-xl bg-surface-hover px-[18px] py-4">
-                        <div className="flex flex-wrap items-center gap-1.5">
+                      <div className="mt-4 flex flex-col gap-4">
+                        <div className="flex flex-wrap items-center gap-2">
                           {q.response_value && (
                             <span
-                              className={`rounded-full px-2 py-0.5 text-xs font-medium ${responseBadgeClasses(q.response_value)}`}
+                              title="The full answer, for your team. The client file may show something different."
+                              className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${responseBadgeClasses(q.response_value)}`}
                             >
                               {q.response_value}
                             </span>
@@ -999,153 +1003,234 @@ export default function QuestionnairePage({ params }: { params: Promise<{ id: st
                           {q.response_value &&
                             clientResponse(q.response_value, allowedAnswers) !== q.response_value && (
                               <span
-                                title="The client's column only accepts Yes or No, so this is what goes into the client file. The IT review report keeps the full answer."
-                                className="rounded-full border border-border px-2 py-0.5 text-xs font-medium text-muted"
+                                title="What goes into the client's Yes/No column. The IT review report keeps the full answer."
+                                className="rounded-full border border-border px-2.5 py-0.5 text-xs font-semibold text-muted"
                               >
-                                Client file: {clientResponse(q.response_value, allowedAnswers)}
+                                Client file: {clientResponse(q.response_value, allowedAnswers) || "left empty"}
                               </span>
                             )}
                           {band && score != null && (
-                            <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${band.classes}`}>
+                            <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${band.classes}`}>
                               {score.toFixed(1)} / 10 · {band.label}
                             </span>
                           )}
                           {band && band.label !== "Ready" && (
-                            <span className="flex items-center gap-1 rounded-full border border-danger-border bg-danger-soft px-2 py-0.5 text-xs font-medium text-danger">
+                            <span className="flex items-center gap-1 rounded-full border border-danger-border bg-danger-soft px-2.5 py-0.5 text-xs font-semibold text-danger">
                               <AlertTriangle size={10} />
                               Needs review
                             </span>
                           )}
-                          <div
-                            role="radiogroup"
-                            aria-label="Answer style for this question"
-                            className="ml-auto flex gap-0.5 rounded-lg bg-surface p-0.5"
-                          >
-                            {(
-                              [
-                                ["brief", "Brief"],
-                                ["short", "Short"],
-                              ] as const
-                            ).map(([value, label]) => {
-                              const active = q.answer_format === value;
-                              return (
-                                <button
-                                  key={value}
-                                  role="radio"
-                                  aria-checked={active}
-                                  disabled={needsConfirm || isGenerating || generatingAll || generatingRange}
-                                  title={active ? `This answer is in the ${label} style` : `Rewrite this answer in the ${label} style`}
-                                  onClick={() => {
-                                    if (active) return;
-                                    if (
-                                      q.edited_by &&
-                                      !confirm(
-                                        "This answer was edited by hand. Switching style regenerates it. You can bring your version back with Restore previous answer. Continue?"
-                                      )
-                                    ) {
-                                      return;
-                                    }
-                                    generateOne(q.id, value);
-                                  }}
-                                  className={`rounded-md px-2.5 py-0.5 text-xs transition-colors disabled:cursor-not-allowed ${
-                                    active
-                                      ? "bg-surface-hover font-semibold text-foreground"
-                                      : "font-medium text-muted hover:text-foreground disabled:opacity-50"
-                                  }`}
-                                >
-                                  {label}
-                                </button>
-                              );
-                            })}
+                          <div className="ml-auto flex items-center gap-2">
+                            <span className="text-xs text-muted">Answer style</span>
+                            <div
+                              role="radiogroup"
+                              aria-label="Answer style for this question"
+                              className="flex gap-0.5 rounded-[10px] bg-surface-hover p-[3px]"
+                            >
+                              {(
+                                [
+                                  ["brief", "Brief"],
+                                  ["short", "Short"],
+                                ] as const
+                              ).map(([value, label]) => {
+                                const active = q.answer_format === value;
+                                return (
+                                  <button
+                                    key={value}
+                                    role="radio"
+                                    aria-checked={active}
+                                    disabled={needsConfirm || isGenerating || generatingAll || generatingRange}
+                                    title={active ? `This answer is in the ${label} style` : `Rewrite this answer in the ${label} style`}
+                                    onClick={() => {
+                                      if (active) return;
+                                      if (
+                                        q.edited_by &&
+                                        !confirm(
+                                          "This answer was edited by hand. Switching style regenerates it. You can bring your version back with Restore previous answer. Continue?"
+                                        )
+                                      ) {
+                                        return;
+                                      }
+                                      generateOne(q.id, value);
+                                    }}
+                                    className={`rounded-lg px-3.5 py-1 text-[13px] transition-colors disabled:cursor-not-allowed ${
+                                      active
+                                        ? "bg-surface font-bold text-foreground shadow-[0_1px_2px_rgba(16,24,40,0.1)]"
+                                        : "font-medium text-muted hover:text-foreground disabled:opacity-50"
+                                    }`}
+                                  >
+                                    {label}
+                                  </button>
+                                );
+                              })}
+                            </div>
                           </div>
                         </div>
-                        {(q.response_value ?? "").toLowerCase() === "na" && (
-                          <p className="mt-2 flex items-start gap-1.5 rounded-lg border border-warning-border bg-warning-soft px-3 py-2 text-xs text-foreground">
-                            <AlertTriangle size={12} className="mt-0.5 shrink-0 text-warning" />
-                            <span>
-                              <span className="font-medium text-warning">May not apply.</span> Please confirm with IT.
-                              The remark below is a draft N/A for the client.
-                            </span>
-                          </p>
-                        )}
-                        {(q.response_value ?? "").toLowerCase() === "no" && !q.answer_text ? (
-                          <p className="mt-2 flex items-start gap-1.5 rounded-lg border border-danger-border bg-danger-soft px-3 py-2 text-xs text-foreground">
-                            <AlertTriangle size={12} className="mt-0.5 shrink-0 text-danger" />
-                            <span>
-                              <span className="font-medium text-danger">Needs IT input.</span> Nothing related was found
-                              in the documents, so the client file is left empty for this one. Write the answer with
-                              Edit answer.
-                            </span>
-                          </p>
-                        ) : (
-                          <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-foreground">{q.answer_text}</p>
-                        )}
-                        {q.gap_note && (
-                          <p className="mt-2 rounded-lg border border-border bg-surface px-3 py-2 text-xs text-foreground">
-                            <span className="font-medium text-muted">Internal gap note (not sent to the client):</span>{" "}
-                            {q.gap_note}
-                          </p>
-                        )}
-                        {q.comparison_note && (
-                          <p className="mt-2 text-xs text-muted">
-                            <span className="font-medium">What changed in the question:</span> {q.comparison_note}
-                          </p>
-                        )}
-                        {q.recommendation && (
-                          <p className="mt-2 rounded-lg border border-warning-border bg-warning-soft px-3 py-2 text-xs text-foreground">
-                            <span className="font-medium text-warning">Recommendation:</span> {q.recommendation}
-                          </p>
-                        )}
-                        {q.suggested_action && (
-                          <p className="mt-2 text-xs text-muted">
-                            <span className="font-medium">Suggested action:</span> {q.suggested_action}
-                          </p>
-                        )}
-                        {doc.client_id && q.source_scope === "general" && (
-                          <p className="mt-2 text-xs text-muted">
-                            Answered from General documents only — consider adding a {doc.client_name}-specific policy
-                            or evidence for this.
-                          </p>
-                        )}
-                        {q.citations.length > 0 && (
-                          <div className="mt-3 flex flex-wrap gap-1.5">
-                            {q.citations.map((c) => (
-                              <a
-                                key={c.id}
-                                href={`/api/documents/${c.id}/file`}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="flex items-center gap-1 rounded-full bg-accent-soft px-2.5 py-1 text-xs font-medium text-accent transition-colors hover:bg-accent hover:text-accent-foreground"
-                              >
-                                <FileText size={11} />
-                                {c.filename}
-                                {c.scope === "general" && doc.client_id && (
-                                  <span className="rounded bg-surface/60 px-1 text-[10px] uppercase">General</span>
-                                )}
-                                <ExternalLink size={10} />
-                              </a>
-                            ))}
-                          </div>
-                        )}
-                        {me && (me.canGenerate || me.canAssist) && (
-                          <AnswerEditor
-                            questionId={q.id}
-                            responseValue={q.response_value}
-                            answerText={q.answer_text}
-                            canRestore={!!q.previous_answer_text}
-                            editedBy={q.edited_by ? (q.edited_by_display_name ?? q.edited_by) : null}
-                            editedAt={q.edited_at}
-                            onQuestionUpdated={(updated) =>
-                              setQuestions((prev) => prev.map((x) => (x.id === q.id ? (updated as Question) : x)))
-                            }
-                          />
-                        )}
-                        {q.generated_by && (
-                          <p className="mt-2 text-xs text-muted-2">
-                            Generated by {q.generated_by_display_name || q.generated_by}
-                            {q.model_used?.includes("backup") && " · answered by the Gemini backup (DeepSeek was busy)"}
-                          </p>
-                        )}
+
+                        <div className="grid items-stretch gap-4 lg:grid-cols-2">
+                          <section className="flex flex-col gap-4 rounded-2xl border-[1.5px] border-success-border bg-success-soft/40 p-5">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <h3 className="flex items-center gap-2 text-[15px] font-bold text-success">
+                                <Check size={17} strokeWidth={2.4} />
+                                Answer for the client
+                              </h3>
+                              <span className="rounded-full bg-success-soft px-2.5 py-0.5 text-xs font-semibold text-success">
+                                Goes into the client file
+                              </span>
+                            </div>
+
+                            {(q.response_value ?? "").toLowerCase() === "na" && (
+                              <p className="flex items-start gap-1.5 rounded-lg border border-warning-border bg-warning-soft px-3 py-2 text-xs text-foreground">
+                                <AlertTriangle size={12} className="mt-0.5 shrink-0 text-warning" />
+                                <span>
+                                  <span className="font-medium text-warning">May not apply.</span> Please confirm with IT.
+                                  The remark below is a draft N/A for the client.
+                                </span>
+                              </p>
+                            )}
+
+                            <div className="flex flex-col gap-1.5">
+                              <span className="text-[11px] font-bold uppercase tracking-[0.08em] text-muted">Yes / No column</span>
+                              {clientResponse(q.response_value, allowedAnswers) ? (
+                                <span className="self-start rounded-[10px] bg-success px-[18px] py-1 text-lg font-bold text-surface">
+                                  {clientResponse(q.response_value, allowedAnswers)}
+                                </span>
+                              ) : (
+                                <span className="self-start rounded-[10px] border border-dashed border-border-strong px-4 py-1 text-sm font-semibold text-muted">
+                                  Left empty
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="flex flex-col gap-1.5">
+                              <span className="text-[11px] font-bold uppercase tracking-[0.08em] text-muted">Remark</span>
+                              {(q.response_value ?? "").toLowerCase() === "no" && !q.answer_text ? (
+                                <p className="flex items-start gap-1.5 rounded-xl border border-danger-border bg-danger-soft px-4 py-3 text-xs text-foreground">
+                                  <AlertTriangle size={12} className="mt-0.5 shrink-0 text-danger" />
+                                  <span>
+                                    <span className="font-medium text-danger">Needs IT input.</span> Nothing related was
+                                    found in the documents, so the client file is left empty for this one. Write the
+                                    answer with Edit answer.
+                                  </span>
+                                </p>
+                              ) : (
+                                <p className="whitespace-pre-line rounded-xl border border-success-border bg-surface px-4 py-3 text-base font-medium leading-relaxed text-foreground">
+                                  {q.answer_text}
+                                </p>
+                              )}
+                            </div>
+
+                            <div className="flex flex-col gap-2">
+                              <span className="text-[11px] font-bold uppercase tracking-[0.08em] text-muted">
+                                Evidence column: documents used
+                              </span>
+                              {q.citations.length > 0 ? (
+                                <div className="flex flex-wrap gap-1.5">
+                                  {q.citations.map((c) => (
+                                    <a
+                                      key={c.id}
+                                      href={`/api/documents/${c.id}/file`}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="flex items-center gap-1 rounded-full border border-success-border bg-surface px-2.5 py-1 text-xs font-semibold text-accent transition-colors hover:bg-accent hover:text-accent-foreground"
+                                    >
+                                      <FileText size={11} />
+                                      {c.filename}
+                                      {c.scope === "general" && doc.client_id && (
+                                        <span className="rounded bg-surface-hover px-1 text-[10px] uppercase text-muted">General</span>
+                                      )}
+                                      <ExternalLink size={10} />
+                                    </a>
+                                  ))}
+                                </div>
+                              ) : (
+                                <span className="text-xs text-muted">No documents were used.</span>
+                              )}
+                              {doc.client_id && q.source_scope === "general" && (
+                                <span className="text-xs text-muted">
+                                  All General documents. Nothing {doc.client_name}-specific yet.
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="mt-auto flex flex-col gap-1">
+                              {me && (me.canGenerate || me.canAssist) && (
+                                <AnswerEditor
+                                  questionId={q.id}
+                                  responseValue={q.response_value}
+                                  answerText={q.answer_text}
+                                  canRestore={!!q.previous_answer_text}
+                                  editedBy={q.edited_by ? (q.edited_by_display_name ?? q.edited_by) : null}
+                                  editedAt={q.edited_at}
+                                  onQuestionUpdated={(updated) =>
+                                    setQuestions((prev) => prev.map((x) => (x.id === q.id ? (updated as Question) : x)))
+                                  }
+                                />
+                              )}
+                              {q.generated_by && (
+                                <p className="text-xs text-muted-2">
+                                  Generated by {q.generated_by_display_name || q.generated_by}
+                                  {q.model_used?.includes("backup") && " · answered by the Gemini backup (DeepSeek was busy)"}
+                                </p>
+                              )}
+                            </div>
+                          </section>
+
+                          <section className="flex flex-col gap-4 rounded-2xl border-[1.5px] border-dashed border-border-strong bg-surface-hover p-5">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <h3 className="flex items-center gap-2 text-[15px] font-bold text-foreground">
+                                <Lock size={16} strokeWidth={2.2} />
+                                For your team only
+                              </h3>
+                              <span className="rounded-full bg-border px-2.5 py-0.5 text-xs font-semibold text-muted">
+                                Never sent to the client
+                              </span>
+                            </div>
+
+                            <div className="flex flex-col gap-1">
+                              <span className="text-[11px] font-bold uppercase tracking-[0.08em] text-muted">1. What is missing</span>
+                              <p className="text-[13.5px] leading-relaxed text-foreground">
+                                {q.gap_note ||
+                                  (q.recommendation
+                                    ? "No gap found against what the client asked. See the recommendation to strengthen the evidence."
+                                    : "Nothing missing: the documents fully support this answer.")}
+                              </p>
+                              {q.comparison_note && (
+                                <p className="text-xs text-muted">
+                                  <span className="font-medium">What changed in the question:</span> {q.comparison_note}
+                                </p>
+                              )}
+                            </div>
+
+                            {q.recommendation && (
+                              <div className="flex flex-col gap-1 rounded-xl bg-warning-soft px-3.5 py-3">
+                                <span className="text-[11px] font-bold uppercase tracking-[0.08em] text-warning">2. Recommendation</span>
+                                <p className="text-[13.5px] leading-relaxed text-foreground">{q.recommendation}</p>
+                              </div>
+                            )}
+
+                            {q.suggested_action && (
+                              <div className="flex flex-col gap-1">
+                                <span className="text-[11px] font-bold uppercase tracking-[0.08em] text-muted">3. Next step</span>
+                                <p className="text-[13.5px] leading-relaxed text-foreground">{q.suggested_action}</p>
+                              </div>
+                            )}
+
+                            {q.documents_to_add && q.documents_to_add.length > 0 && (
+                              <div className="flex flex-col gap-2 rounded-xl border border-border bg-surface px-3.5 py-3">
+                                <span className="text-[11px] font-bold uppercase tracking-[0.08em] text-accent">
+                                  4. Documents to add to close the gap
+                                </span>
+                                {q.documents_to_add.map((d, i) => (
+                                  <div key={i} className="flex gap-2 text-[13.5px] leading-relaxed text-foreground">
+                                    <span className="font-bold text-accent">+</span>
+                                    <span>{d}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </section>
+                        </div>
                       </div>
                     )}
 

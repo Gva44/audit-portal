@@ -28,6 +28,7 @@ export type QuestionExportRow = {
   edited_by_display_name?: string | null;
   answer_format?: string | null;
   gap_note?: string | null;
+  documents_to_add?: string[] | null;
 };
 
 async function toBuffer(workbook: ExcelJS.Workbook): Promise<Buffer> {
@@ -198,6 +199,7 @@ export async function buildReviewReport(
     ["Gap (internal): what is asked but not directly evidenced", 50],
     ["Recommendation", 50],
     ["Suggested action", 40],
+    ["Documents to add", 44],
     ["Flag", 26],
     ["Evidence found", 40],
     ["Based on", 20],
@@ -226,6 +228,7 @@ export async function buildReviewReport(
       q.gap_note ?? "",
       q.recommendation ?? "",
       q.suggested_action ?? "",
+      (q.documents_to_add ?? []).join("; "),
       flagOf(q),
       q.citations.map((c) => c.filename).join("; "),
       q.source_scope ? (SCOPE_LABEL[q.source_scope] ?? q.source_scope) : "",

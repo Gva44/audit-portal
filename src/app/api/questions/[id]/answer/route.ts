@@ -51,6 +51,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           comparison_note = ${generated.comparisonNote},
           recommendation = ${generated.recommendation},
           gap_note = ${generated.gapNote},
+          documents_to_add = ${JSON.stringify(generated.documentsToAdd)}::jsonb,
           source_scope = ${generated.sourceScope},
           embedding = ${generated.embeddingLiteral}::vector,
           prior_question_id = ${generated.priorQuestionId},
