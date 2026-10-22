@@ -156,6 +156,7 @@ export default function QuestionnairePage({ params }: { params: Promise<{ id: st
   const [compareError, setCompareError] = useState<string | null>(null);
   const [setupOpen, setSetupOpen] = useState(false);
   const [format, setFormat] = useState<"brief" | "short">("short");
+  const [redoAnswered, setRedoAnswered] = useState(false);
   const [columnPicks, setColumnPicks] = useState<Record<"questionCol" | "evidenceCol" | "responseCol" | "commentsCol", string>>({
     questionCol: "",
     evidenceCol: "",
@@ -375,11 +376,26 @@ export default function QuestionnairePage({ params }: { params: Promise<{ id: st
     setTimeout(() => setBatch(null), 4000);
   }
 
+  // Replacing answers that already exist needs a clear yes first. Each one keeps its previous
+  // version, which "Restore previous answer" brings back.
+  function confirmReplace(list: Question[]): boolean {
+    if (!redoAnswered) return true;
+    const existing = list.filter((q) => q.answer_status === "ok");
+    if (existing.length === 0) return true;
+    const edited = existing.filter((q) => q.edited_by).length;
+    return confirm(
+      `This will replace ${existing.length} existing ${existing.length === 1 ? "answer" : "answers"} with new ${format === "brief" ? "Brief" : "Short"} ones` +
+        (edited > 0 ? `, including ${edited} you edited by hand` : "") +
+        ". The previous version of each can be brought back with Restore previous answer. Continue?"
+    );
+  }
+
   async function generateAll() {
+    const target = redoAnswered ? questions : questions.filter((q) => q.answer_status !== "ok");
+    if (!confirmReplace(target)) return;
     setGeneratingAll(true);
     try {
-      const pending = questions.filter((q) => q.answer_status !== "ok");
-      await generateBatch(pending.map((q) => q.id));
+      await generateBatch(target.map((q) => q.id));
     } finally {
       setGeneratingAll(false);
     }
@@ -394,8 +410,9 @@ export default function QuestionnairePage({ params }: { params: Promise<{ id: st
     try {
       // position is 0-indexed internally; the UI shows 1-indexed question numbers.
       const inRange = questions.filter(
-        (q) => q.position + 1 >= from && q.position + 1 <= to && q.answer_status !== "ok"
+        (q) => q.position + 1 >= from && q.position + 1 <= to && (redoAnswered || q.answer_status !== "ok")
       );
+      if (!confirmReplace(inRange)) return;
       await generateBatch(inRange.map((q) => q.id));
     } finally {
       setGeneratingRange(false);
@@ -523,7 +540,7 @@ export default function QuestionnairePage({ params }: { params: Promise<{ id: st
                     generatingAll ||
                     generatingRange ||
                     questions.length === 0 ||
-                    questions.every((q) => q.answer_status === "ok")
+                    (!redoAnswered && questions.every((q) => q.answer_status === "ok"))
                   }
                   className="flex items-center gap-2 rounded-[10px] bg-foreground px-4 py-2.5 text-sm font-semibold text-surface transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
                 >
@@ -801,6 +818,18 @@ export default function QuestionnairePage({ params }: { params: Promise<{ id: st
                   Applies to answers generated from now on. Change it between runs to mix styles, for example 1-20
                   Brief and 21-40 Short.
                 </span>
+                <label className="flex w-full cursor-pointer items-center gap-2 text-sm text-foreground">
+                  <input
+                    type="checkbox"
+                    checked={redoAnswered}
+                    onChange={(e) => setRedoAnswered(e.target.checked)}
+                    className="h-4 w-4 accent-[var(--color-accent)]"
+                  />
+                  Also redo questions that already have an answer
+                  <span className="text-xs text-muted">
+                    (for Generate all answers and Generate range; the old version can be restored)
+                  </span>
+                </label>
               </div>
             )}
 
