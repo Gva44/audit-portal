@@ -178,6 +178,8 @@ export type GeneratedAnswer = {
   comparisonStatus: ComparisonStatus;
   comparisonNote: string | null;
   recommendation: string | null;
+  // Internal: what the client asked for that the documents do not directly evidence, and what was used instead.
+  gapNote: string | null;
   sourceScope: SourceScope | null;
   // The question's own embedding (for persisting so *future* similar questions, e.g. next
   // year's questionnaire, can find this one), and which prior question (if any) was used
@@ -368,21 +370,19 @@ export type AnswerContext = {
   format?: AnswerFormat;
 };
 
-export async function generateAnswer(ctx: AnswerContext): Promise<GeneratedAnswer> {
-  const { questionText, rowData, clientId, documentId } = ctx;
-  const format = ctx.format ?? DEFAULT_FORMAT;
-  const vectorLiteral = toVectorLiteral(await generateEmbedding(questionText));
+type DocRow = { id: string; filename: string; extracted_text: string; client_id: string | null };
 
-  // Hybrid retrieval: blend keyword relevance (ts_rank) with semantic similarity, the
-  // same weighting used for the search bar (src/app/api/search/route.ts), so a document
-  // that's an exact terminology match but a weaker semantic match still surfaces.
-  // Searches the client's own documents plus the shared General pool (client_id null).
+// Hybrid retrieval: blend keyword relevance (ts_rank) with semantic similarity, the same
+// weighting used for the search bar (src/app/api/search/route.ts), so a document that's an
+// exact terminology match but a weaker semantic match still surfaces. Searches the client's
+// own documents plus the shared General pool (client_id null).
+async function searchDocs(text: string, vectorLiteral: string, clientId: string | null, limit: number): Promise<DocRow[]> {
   const rows = await sql`
     select id, filename, extracted_text, client_id,
            (
              coalesce(ts_rank(
                to_tsvector('english', coalesce(filename, '') || ' ' || coalesce(extracted_text, '')),
-               plainto_tsquery('english', ${questionText})
+               plainto_tsquery('english', ${text})
              ), 0) * 0.4
              + coalesce(1 - (embedding <=> ${vectorLiteral}::vector), 0) * 0.6
              + case when client_id is not null then ${CLIENT_DOC_BOOST}::float else 0 end
@@ -393,19 +393,58 @@ export async function generateAnswer(ctx: AnswerContext): Promise<GeneratedAnswe
       and extracted_text is not null
       and (client_id is null or client_id = ${clientId}::uuid)
     order by score desc
-    limit ${MAX_RETRIEVED_DOCS}
+    limit ${limit}
   `;
+  return rows as unknown as DocRow[];
+}
+
+type ParsedAnswer = {
+  response?: unknown;
+  comments?: unknown;
+  confidenceScore?: unknown;
+  suggestedAction?: unknown;
+  supportingDocumentIds?: unknown;
+  comparisonStatus?: unknown;
+  comparisonNote?: unknown;
+  recommendation?: unknown;
+  gapNote?: unknown;
+};
+
+function addUsage(a: Usage, b: Usage): Usage {
+  return { ...b, inputTokens: a.inputTokens + b.inputTokens, outputTokens: a.outputTokens + b.outputTokens };
+}
+
+// When the first pass finds only a weak match, ask what other controls would partly or
+// alternatively address the question (for DDoS: firewall deny rules, IPS, rate limiting ...)
+// and search the documents again with those terms.
+async function relatedControlTerms(questionText: string, expectedEvidence: string | null): Promise<string[]> {
+  const { data } = await generateJsonResilient<{ terms?: unknown }>(
+    "You help find policy text that answers an IT/security due-diligence question when the exact topic may not be " +
+      "named in the policies. List 6 to 10 short search terms for controls, measures or documents that would " +
+      "address the question directly or through a related or alternative control (for example for DDoS protection: " +
+      'firewall, default deny, IPS, rate limiting, traffic filtering, monitoring, perimeter). Respond with JSON: {"terms": string[]}.',
+    `Question: ${questionText}${expectedEvidence ? `\nEvidence the client expects: ${expectedEvidence}` : ""}`
+  );
+  return Array.isArray(data.terms)
+    ? data.terms.filter((t): t is string => typeof t === "string" && t.trim().length > 0).slice(0, 10)
+    : [];
+}
+
+export async function generateAnswer(ctx: AnswerContext): Promise<GeneratedAnswer> {
+  const { questionText, rowData, clientId, documentId } = ctx;
+  const format = ctx.format ?? DEFAULT_FORMAT;
+  const vectorLiteral = toVectorLiteral(await generateEmbedding(questionText));
+  const expectedEvidence = ctx.expectedEvidence ?? findExpectedEvidence(rowData);
+
+  const firstRows = await searchDocs(questionText, vectorLiteral, clientId, MAX_RETRIEVED_DOCS);
 
   const priorMatch = await findPriorMatch(vectorLiteral, clientId, documentId);
   const similarityStatus: ComparisonStatus = priorMatch ? comparisonFromSimilarity(priorMatch.similarity) : "new";
 
-  if (rows.length === 0) {
+  if (firstRows.length === 0) {
     return {
       responseValue: "No",
-      comments:
-        format === "short"
-          ? "- No supporting policy or evidence in place"
-          : "No supporting policy or evidence is currently in place.",
+      comments: "",
       citations: [],
       confidenceLevel: "low",
       confidenceScore: 0,
@@ -416,6 +455,7 @@ export async function generateAnswer(ctx: AnswerContext): Promise<GeneratedAnswe
       recommendation: priorMatch
         ? "No current policy or evidence supports this. Last year's answer is shown for reference only — verify it before reusing."
         : null,
+      gapNote: "There are no policy or evidence documents in the library to answer this from, so IT needs to write the answer.",
       sourceScope: null,
       embeddingLiteral: vectorLiteral,
       priorQuestionId: priorMatch ? priorMatch.id : null,
@@ -424,103 +464,133 @@ export async function generateAnswer(ctx: AnswerContext): Promise<GeneratedAnswe
     };
   }
 
-  const expectedEvidence = ctx.expectedEvidence ?? findExpectedEvidence(rowData);
   const keywords = keywordsOf(`${questionText} ${expectedEvidence ?? ""}`);
-  const excerpts = rows
-    .map(
-      (r) =>
-        `[doc id="${r.id}" filename="${r.filename}" scope="${r.client_id ? "client" : "general"}"]\n${selectPassages(String(r.extracted_text), keywords, PASSAGE_BUDGET_PER_DOC)}\n[/doc]`
-    )
-    .join("\n\n");
-  const userContent = [
-    `Excerpts:\n\n${excerpts}`,
-    expectedEvidence ? `Evidence the client expects for this question: ${expectedEvidence}` : null,
-    priorMatch
-      ? `The same client's previous questionnaire had a ${similarityStatus === "same" ? "near-identical" : "related"} ` +
-        `question, answered as follows (reference only — reuse or adapt it ONLY if the excerpts above still ` +
-        `support it; if they contradict it or no longer support it, answer fresh from the excerpts):\n` +
-        `Previous question: ${priorMatch.question_text}\n` +
-        `Previous response: ${priorMatch.response_value}\n` +
-        `Previous comments: ${priorMatch.answer_text}`
-      : null,
-    `Question: ${questionText}`,
-  ]
-    .filter(Boolean)
-    .join("\n\n");
+  const lengthRule =
+    format === "brief"
+      ? "BRIEF style: ONE sentence, 18 to 22 words (hard maximum 25, count them), naming the control and one specific fact (a tool, number, frequency or scope). Do not list every control: pick the strongest. "
+      : "SHORT style: ONE phrase of 8 to 10 words (hard maximum 12, count them), no bullets, no explanation, with the single most specific fact (a tool, number, frequency or scope). " +
+        'It reads like "Critical patches applied within 20 days via WSUS" or "Enabled on the firewall (drops SYN and ICMP floods)" (style only: never reuse those facts). ';
 
-  const { data: parsed, modelUsed, usage } = await generateJsonResilient<{
-    response?: unknown;
-    comments?: unknown;
-    confidenceScore?: unknown;
-    suggestedAction?: unknown;
-    supportingDocumentIds?: unknown;
-    comparisonStatus?: unknown;
-    comparisonNote?: unknown;
-    recommendation?: unknown;
-  }>(
-    "You are an IT/security audit compliance assistant answering a due-diligence questionnaire " +
-      "question for a banking client, using ONLY the provided policy/evidence excerpts. Never invent " +
-      "facts not present in the excerpts, and never include passwords, API keys, or other secrets in " +
-      "your answer even if they appear in the excerpts.\n\n" +
-      "Determine:\n" +
-      '- response: "Yes" if the excerpts clearly and fully support a positive answer. "Partial" if the ' +
-      "excerpts address ANY part of the question — a related process, a policy that covers some of the " +
-      "listed points, or a control that exists but lacks something asked for. Prefer Partial over No " +
-      'whenever related content exists. "No" ONLY if the excerpts contain nothing relevant, or clearly ' +
-      'contradict the requirement. "NA" if the question does not apply, or a short free-text value if the ' +
-      "question is not a yes/no/na question (e.g. asks for a description, a number, or a list).\n" +
-      "- comments: the remark that goes into the CLIENT's file, so keep it precise and to the point. State only " +
-      "what IS in place. Never describe what is missing or not covered (that goes in recommendation). Do not " +
-      "name documents, policy IDs, version numbers or section numbers (document names go in a separate evidence " +
-      "column). Do not explain more than was asked. " +
-      (format === "brief"
-        ? "BRIEF format: one or two plain sentences, at most 40 words in total. "
-        : 'SHORT format: two or three bullet lines, each starting with "- " and at most 15 words, naming the ' +
-          "controls or measures in place. No intro line and no closing line. ") +
-      "If the question asks for a specific value (a name, number, frequency, vendor), give just that value. " +
-      'If the response is "No", say in one short line that it is not currently in place. Put this wording in ' +
-      "comments, never in the response field.\n" +
-      "- confidenceScore (0 to 1): how well the excerpts support the answer. 0.8+ only if at least two " +
-      "strong, unambiguous matches fully cover the question and any evidence the client expects; " +
-      "0.5-0.79 if one strong but incomplete match or the answer is only partly covered; below 0.5 if " +
-      "the evidence is weak, indirect, or absent.\n" +
-      '- suggestedAction: only when response is "No" or "Partial", or confidenceScore is below 0.8 — a short, ' +
-      'concrete next step (e.g. "Draft a policy covering X", "Update the Y policy to address Z"). ' +
-      "Otherwise null.\n" +
-      (priorMatch
-        ? '- comparisonStatus: how the current question relates to the previous one — "same" (same ask, ' +
-          'same meaning), "reworded" (same meaning, different wording), or "changed" (part of the ask is ' +
-          "different).\n" +
-          "- comparisonNote: if reworded/changed, in one or two sentences say exactly what differs between the " +
-          "two questions; otherwise null.\n" +
-          "- recommendation: tell the IT team in one to three sentences whether last year's answer can be " +
-          "reused as-is, or what to update in the response, remark or evidence given the current excerpts, " +
-          "and anything better that can now be said than last year. If the response is Partial or No, also say " +
-          "what is not covered.\n"
-        : '- recommendation: required whenever the response is "Partial" or "No" — one to three sentences ' +
-          "saying plainly what is NOT covered and naming the policy section to add or amend, or the evidence to " +
-          "prepare, so the question can be answered in full; otherwise null. This is internal and is where gaps " +
-          "belong.\n") +
-      '\nRespond with JSON: {"response": string, "comments": string, "confidenceScore": number, ' +
-      '"suggestedAction": string|null, "supportingDocumentIds": string[], ' +
-      '"comparisonStatus": string|null, "comparisonNote": string|null, "recommendation": string|null}. ' +
-      "supportingDocumentIds must be a subset of the doc ids shown in the excerpts, limited to the ones " +
-      "that actually support the answer.",
-    userContent
-  );
+  const system =
+    "You are an IT/security audit compliance assistant answering a due-diligence questionnaire question for a banking " +
+    "client, using ONLY the provided policy/evidence excerpts. Never invent facts, names, numbers, tools or dates that " +
+    "are not in the excerpts, and never include passwords, API keys or other secrets.\n\n" +
+    "Your job is to ANSWER, never to tell the client the company lacks something. Search every excerpt for the closest " +
+    "related control and answer with it, even when the question's exact topic (for example DDoS protection) is not " +
+    "named: use the measures that do address the risk (for example firewall default-deny, IPS/IDS, traffic filtering, " +
+    "connection limits, monitoring) and state them specifically.\n\n" +
+    "Determine:\n" +
+    '- response: "Yes" when the excerpts clearly support the answer. "Partial" when the answer relies on related or ' +
+    "alternative controls, or covers only part of the question (the normal result when the exact topic is missing). " +
+    '"NA" ONLY when the question genuinely does not apply to this company or engagement (for example it asks about ' +
+    "cloud services, internet-facing systems, APIs or in-house software development and the excerpts show there are " +
+    'none). "No" ONLY when, after searching every excerpt, nothing related exists at all (rare). Or a short free-text ' +
+    "value if the question asks for a value (a name, number, frequency).\n" +
+    "- comments: the remark that goes into the CLIENT's file. State what IS in place, specifically. " +
+    lengthRule +
+    'If response is "NA": exactly "N/A. " followed by a short reason taken from the excerpts (at most 15 words); this ' +
+    'is a draft for IT to confirm. If response is "No": an empty string. NEVER write "we do not have", "no ", "not in ' +
+    'place", "not covered", "not evidenced", "no policy" or any gap wording in comments. Do not name documents, policy ' +
+    "IDs, version numbers or section numbers (document names go in a separate evidence column).\n" +
+    "- gapNote: INTERNAL, for the IT team, never sent to the client. Null when response is Yes. Otherwise one or two " +
+    "plain sentences: what the client is really asking for, what the excerpts do not directly evidence, and which " +
+    "related control the answer used instead. This is where \"not there\" is stated.\n" +
+    "- confidenceScore (0 to 1): how well the excerpts support the answer. 0.8+ only if at least two strong, " +
+    "unambiguous matches fully cover the question and any evidence the client expects; 0.5-0.79 if one strong but " +
+    "incomplete match or the answer rests on related controls; below 0.5 if the evidence is weak or indirect.\n" +
+    '- suggestedAction: only when response is "No" or "Partial", or confidenceScore is below 0.8 — a short, concrete ' +
+    'next step (e.g. "Draft a policy covering X", "Update the Y policy to address Z"). Otherwise null.\n' +
+    (priorMatch
+      ? '- comparisonStatus: how the current question relates to the previous one — "same" (same ask, same meaning), ' +
+        '"reworded" (same meaning, different wording), or "changed" (part of the ask is different).\n' +
+        "- comparisonNote: if reworded/changed, in one or two sentences say exactly what differs between the two " +
+        "questions; otherwise null.\n" +
+        "- recommendation: tell the IT team in one to three sentences whether last year's answer can be reused as-is, " +
+        "or what to update in the response, remark or evidence given the current excerpts. If the response is Partial " +
+        "or No, also say what would close the gap.\n"
+      : '- recommendation: required whenever the response is "Partial" or "No" — one to three sentences naming the ' +
+        "policy section to add or amend, or the evidence to prepare, so the question can be answered in full; " +
+        "otherwise null. Internal only.\n") +
+    '\nRespond with JSON: {"response": string, "comments": string, "confidenceScore": number, ' +
+    '"suggestedAction": string|null, "supportingDocumentIds": string[], "gapNote": string|null, ' +
+    '"comparisonStatus": string|null, "comparisonNote": string|null, "recommendation": string|null}. ' +
+    "supportingDocumentIds must be a subset of the doc ids shown in the excerpts, limited to the ones that actually " +
+    "support the answer.";
+
+  const answerFrom = async (docs: DocRow[], extraNote: string | null) => {
+    const excerpts = docs
+      .map(
+        (r) =>
+          `[doc id="${r.id}" filename="${r.filename}" scope="${r.client_id ? "client" : "general"}"]\n${selectPassages(String(r.extracted_text), keywords, PASSAGE_BUDGET_PER_DOC)}\n[/doc]`
+      )
+      .join("\n\n");
+    const userContent = [
+      `Excerpts:\n\n${excerpts}`,
+      extraNote,
+      expectedEvidence ? `Evidence the client expects for this question: ${expectedEvidence}` : null,
+      priorMatch
+        ? `The same client's previous questionnaire had a ${similarityStatus === "same" ? "near-identical" : "related"} ` +
+          `question, answered as follows (reference only — reuse or adapt it ONLY if the excerpts above still ` +
+          `support it; if they contradict it or no longer support it, answer fresh from the excerpts):\n` +
+          `Previous question: ${priorMatch.question_text}\n` +
+          `Previous response: ${priorMatch.response_value}\n` +
+          `Previous comments: ${priorMatch.answer_text}`
+        : null,
+      `Question: ${questionText}`,
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+    const out = await generateJsonResilient<ParsedAnswer>(system, userContent);
+    return { ...out, docs };
+  };
+
+  let attempt = await answerFrom(firstRows, null);
+
+  // Weak first match: look for related or alternative controls across all the documents and answer again.
+  const firstResponse = typeof attempt.data.response === "string" ? attempt.data.response.trim().toLowerCase() : "";
+  const firstConfidence = clampUnit(attempt.data.confidenceScore);
+  if (firstResponse === "no" || (firstResponse === "partial" && firstConfidence < 0.6)) {
+    try {
+      const terms = await relatedControlTerms(questionText, expectedEvidence);
+      if (terms.length > 0) {
+        const widened = `${questionText} ${terms.join(" ")}`;
+        const moreRows = await searchDocs(widened, toVectorLiteral(await generateEmbedding(widened)), clientId, 8);
+        const seen = new Set(firstRows.map((r) => r.id));
+        const merged = [...firstRows, ...moreRows.filter((r) => !seen.has(r.id))].slice(0, 10);
+        if (merged.length > firstRows.length) {
+          const second = await answerFrom(
+            merged,
+            `The first search found only a weak match, so more excerpts were added by searching for related controls (${terms.join(", ")}). Answer through the closest related control you find.`
+          );
+          const secondConfidence = clampUnit(second.data.confidenceScore);
+          const secondResponse = typeof second.data.response === "string" ? second.data.response.trim().toLowerCase() : "";
+          const secondBetter = secondResponse !== "no" || firstResponse === "no";
+          if (secondBetter && (secondConfidence >= firstConfidence || firstResponse === "no")) {
+            attempt = { ...second, usage: addUsage(attempt.usage, second.usage) };
+          } else {
+            attempt = { ...attempt, usage: addUsage(attempt.usage, second.usage) };
+          }
+        }
+      }
+    } catch (err) {
+      console.error("Related-controls search failed; keeping the first answer:", err);
+    }
+  }
+
+  const { data: parsed, modelUsed, usage, docs: rows } = attempt;
 
   let responseValue = typeof parsed.response === "string" ? parsed.response.trim() : "";
   // The model occasionally puts the "no evidence" sentence in the response field; that
   // sentence belongs in the comments, and the response is simply "No".
   if (/^no supporting policy/i.test(responseValue)) responseValue = "No";
   const comments = typeof parsed.comments === "string" ? parsed.comments.trim() : "";
-  if (!responseValue || !comments) {
+  if (!responseValue) throw new Error("Model response did not include a response");
+  // "No" deliberately leaves the client remark empty for IT to write; every other response needs one.
+  if (!comments && responseValue.toLowerCase() !== "no") {
     throw new Error("Model response did not include a response and comments");
   }
 
-  const supportingIds = new Set(
-    Array.isArray(parsed.supportingDocumentIds) ? parsed.supportingDocumentIds : []
-  );
+  const supportingIds = new Set(Array.isArray(parsed.supportingDocumentIds) ? parsed.supportingDocumentIds : []);
   const citations: Citation[] = rows
     .filter((r) => supportingIds.has(r.id as string))
     .map((r) => ({
@@ -533,9 +603,7 @@ export async function generateAnswer(ctx: AnswerContext): Promise<GeneratedAnswe
   const sourceScope: SourceScope | null =
     hasClient && hasGeneral ? "mixed" : hasClient ? "client" : hasGeneral ? "general" : null;
 
-  const comparisonStatus = priorMatch
-    ? normalizeComparison(parsed.comparisonStatus, similarityStatus)
-    : "new";
+  const comparisonStatus = priorMatch ? normalizeComparison(parsed.comparisonStatus, similarityStatus) : "new";
 
   let score = Math.round(clampUnit(parsed.confidenceScore) * 100) / 10;
   let recommendation = optionalText(parsed.recommendation);
@@ -565,6 +633,7 @@ export async function generateAnswer(ctx: AnswerContext): Promise<GeneratedAnswe
     comparisonStatus,
     comparisonNote: optionalText(parsed.comparisonNote),
     recommendation,
+    gapNote: responseValue.toLowerCase() === "yes" ? null : optionalText(parsed.gapNote),
     sourceScope,
     embeddingLiteral: vectorLiteral,
     priorQuestionId: priorMatch ? priorMatch.id : null,

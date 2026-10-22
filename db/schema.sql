@@ -178,3 +178,6 @@ alter table documents add column if not exists answer_format text not null defau
 alter table documents add column if not exists allowed_answers text not null default 'auto';
 alter table documents add column if not exists columns_confirmed boolean not null default false;
 alter table questions add column if not exists answer_format text;
+
+-- Internal note: what the client asked for that the documents do not directly evidence, and what the answer used instead.
+alter table questions add column if not exists gap_note text;

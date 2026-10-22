@@ -56,6 +56,7 @@ type Question = {
   previous_response_value: string | null;
   previous_answer_text: string | null;
   answer_format: "brief" | "short" | null;
+  gap_note: string | null;
   generated_by: string | null;
   generated_by_display_name: string | null;
   answer_status: "pending" | "generating" | "ok" | "failed";
@@ -813,8 +814,8 @@ export default function QuestionnairePage({ params }: { params: Promise<{ id: st
                 </div>
                 <span className="text-xs text-muted">
                   {format === "brief"
-                    ? "One or two sentences per answer."
-                    : "Two or three short bullet points per answer."}{" "}
+                    ? "One sentence with the specific control (about 15-25 words)."
+                    : "One specific phrase (up to about 12 words), no bullets."}{" "}
                   Applies to answers generated from now on. Change it between runs to mix styles, for example 1-20
                   Brief and 21-40 Short.
                 </span>
@@ -985,7 +986,7 @@ export default function QuestionnairePage({ params }: { params: Promise<{ id: st
                       </div>
                     )}
 
-                    {q.answer_status === "ok" && q.answer_text && (
+                    {q.answer_status === "ok" && (q.answer_text || q.response_value) && (
                       <div className="mt-4 rounded-xl bg-surface-hover px-[18px] py-4">
                         <div className="flex flex-wrap items-center gap-1.5">
                           {q.response_value && (
@@ -1058,7 +1059,33 @@ export default function QuestionnairePage({ params }: { params: Promise<{ id: st
                             })}
                           </div>
                         </div>
-                        <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-foreground">{q.answer_text}</p>
+                        {(q.response_value ?? "").toLowerCase() === "na" && (
+                          <p className="mt-2 flex items-start gap-1.5 rounded-lg border border-warning-border bg-warning-soft px-3 py-2 text-xs text-foreground">
+                            <AlertTriangle size={12} className="mt-0.5 shrink-0 text-warning" />
+                            <span>
+                              <span className="font-medium text-warning">May not apply.</span> Please confirm with IT.
+                              The remark below is a draft N/A for the client.
+                            </span>
+                          </p>
+                        )}
+                        {(q.response_value ?? "").toLowerCase() === "no" && !q.answer_text ? (
+                          <p className="mt-2 flex items-start gap-1.5 rounded-lg border border-danger-border bg-danger-soft px-3 py-2 text-xs text-foreground">
+                            <AlertTriangle size={12} className="mt-0.5 shrink-0 text-danger" />
+                            <span>
+                              <span className="font-medium text-danger">Needs IT input.</span> Nothing related was found
+                              in the documents, so the client file is left empty for this one. Write the answer with
+                              Edit answer.
+                            </span>
+                          </p>
+                        ) : (
+                          <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-foreground">{q.answer_text}</p>
+                        )}
+                        {q.gap_note && (
+                          <p className="mt-2 rounded-lg border border-border bg-surface px-3 py-2 text-xs text-foreground">
+                            <span className="font-medium text-muted">Internal gap note (not sent to the client):</span>{" "}
+                            {q.gap_note}
+                          </p>
+                        )}
                         {q.comparison_note && (
                           <p className="mt-2 text-xs text-muted">
                             <span className="font-medium">What changed in the question:</span> {q.comparison_note}

@@ -192,9 +192,10 @@ export default function AnswerSetup({
             <Lightbulb size={14} className="mt-0.5 shrink-0 text-accent" />
             <div>
               <p>
-                When the client only accepts <b>Yes or No</b>, we write <b>Yes</b> if the documents cover the
-                control at all (even partly) and <b>No</b> only when nothing covers it. The IT review report still
-                shows Partial.
+                The client file never says &ldquo;No&rdquo; because a control is missing. We write <b>Yes</b> and
+                describe the closest related control from your documents. <b>No</b> or <b>N/A</b> is only used when a
+                question truly does not apply, and those are flagged for IT to confirm. The IT review report
+                spells out what was asked but not directly evidenced.
               </p>
               <p className="mt-1.5">
                 Layout not right, or the questions are in a different place? Open{" "}

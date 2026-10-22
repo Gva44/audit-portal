@@ -50,6 +50,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           comparison_status = ${generated.comparisonStatus},
           comparison_note = ${generated.comparisonNote},
           recommendation = ${generated.recommendation},
+          gap_note = ${generated.gapNote},
           source_scope = ${generated.sourceScope},
           embedding = ${generated.embeddingLiteral}::vector,
           prior_question_id = ${generated.priorQuestionId},

@@ -36,23 +36,26 @@ export function resolveAllowed(
   return any && !PARTIAL_HEADER.test(any) ? "yesno" : "yesnopartialna";
 }
 
-// What goes into the client's response column. Partial counts as Yes when the client only
-// accepts Yes or No (something covers it); No means nothing covers it. Free-text answers
-// (a name, a number) pass through unchanged.
+// What goes into the client's response column. The client file never says "No" because a control
+// is missing: Partial (related or alternative controls) is written as Yes. "No" internally means
+// nothing related was found at all, so the cell stays empty for IT to fill in. NA means the
+// question does not apply: "No" in a Yes/No-only column, "NA" where the client allows it.
+// Free-text answers (a name, a number) pass through unchanged.
 export function clientResponse(internal: string | null, allowed: Exclude<AllowedAnswers, "auto">): string {
   const v = (internal ?? "").trim();
   if (!v) return "";
-  if (allowed === "yesnopartialna") return v;
   const lower = v.toLowerCase();
+  if (lower === "no") return "";
+  if (allowed === "yesnopartialna") return lower === "partial" ? "Yes" : v;
   if (lower === "yes" || lower === "partial") return "Yes";
-  if (lower === "no") return "No";
-  return v; // NA or a free-text value
+  if (lower === "na" || lower === "n/a") return "No";
+  return v;
 }
 
 // With no response column, the remark has to carry the answer itself.
 export function remarkWithAnswer(response: string, remark: string | null): string {
   const text = (remark ?? "").trim();
-  if (!response) return text;
+  if (!response || /^n\/?a\b/i.test(text)) return text;
   if (!text) return response;
   return text.startsWith("- ") || text.startsWith("•") ? `${response}\n${text}` : `${response}. ${text}`;
 }
