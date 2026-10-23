@@ -18,6 +18,7 @@ export async function GET(request: NextRequest) {
            count(*) filter (where q.answer_status = 'ok' and q.score < 5)::int as recheck,
            count(*) filter (where q.answer_status = 'failed')::int as failed,
            count(*) filter (where q.answer_status = 'ok' and lower(q.response_value) in ('na', 'n/a', 'no'))::int as needs_it,
+           count(*) filter (where q.reply_status in ('different', 'query', 'unclear'))::int as reply_followup,
            max(q.updated_at) as last_activity
     from documents d
     left join clients c on c.id = d.client_id
@@ -119,6 +120,14 @@ export async function GET(request: NextRequest) {
     const unanswered = (d.total as number) - (d.answered as number) - (d.failed as number);
     if (unanswered > 0) {
       attention.push({ kind: "pending", text: `${unanswered} questions still unanswered`, href, questionnaire: name });
+    }
+    if ((d.reply_followup as number) > 0) {
+      attention.push({
+        kind: "low",
+        text: `${d.reply_followup} client replies need a follow-up (different, a query, or unclear)`,
+        href,
+        questionnaire: name,
+      });
     }
     if ((d.needs_it as number) > 0) {
       attention.push({

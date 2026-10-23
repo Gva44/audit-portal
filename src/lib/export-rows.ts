@@ -27,6 +27,9 @@ export function toExportRows(rows: Row[]): QuestionExportRow[] {
     answer_format: q.answer_format as string | null,
     gap_note: q.gap_note as string | null,
     documents_to_add: (q.documents_to_add as string[] | null) ?? null,
+    client_reply: q.client_reply as string | null,
+    reply_status: q.reply_status as string | null,
+    reply_note: q.reply_note as string | null,
     edited_by_display_name: q.edited_by ? ((q.edited_by_display_name as string | null) ?? (q.edited_by as string)) : null,
   }));
 }

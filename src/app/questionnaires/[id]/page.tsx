@@ -5,11 +5,14 @@ import Link from "next/link";
 import Nav from "@/components/Nav";
 import { AnswerEditor, DocumentAssistant, QuestionAssistant } from "@/components/Assistant";
 import AnswerSetup from "@/components/AnswerSetup";
-import { asAllowed, clientResponse, resolveAllowed } from "@/lib/answer-format";
+import ClientReply from "@/components/ClientReply";
+import { buildCopy, type CopyRow } from "@/lib/copy-for-word";
+import { asAllowed, clientResponse, remarkWithAnswer, resolveAllowed } from "@/lib/answer-format";
 import {
   AlertTriangle,
   Check,
   ChevronDown,
+  ClipboardCopy,
   CheckCircle2,
   ClipboardCheck,
   Download,
@@ -60,6 +63,12 @@ type Question = {
   answer_format: "brief" | "short" | null;
   gap_note: string | null;
   documents_to_add: string[] | null;
+  client_reply: string | null;
+  reply_status: "agreed" | "different" | "query" | "unclear" | null;
+  reply_note: string | null;
+  reply_by: string | null;
+  reply_by_display_name: string | null;
+  reply_at: string | null;
   generated_by: string | null;
   generated_by_display_name: string | null;
   answer_status: "pending" | "generating" | "ok" | "failed";
@@ -134,7 +143,7 @@ function scoreOf(q: Question): number | null {
   return Number.isNaN(n) ? null : n;
 }
 
-type StatusFilter = "all" | "needs_review" | "pending" | "answered" | "differs";
+type StatusFilter = "all" | "needs_review" | "pending" | "answered" | "differs" | "replies" | "followup";
 
 const COLUMN_FIELDS: { key: "questionCol" | "evidenceCol" | "responseCol" | "commentsCol"; label: string; hint: string }[] = [
   { key: "questionCol", label: "Questions are in", hint: "Auto-detect" },
@@ -161,6 +170,8 @@ export default function QuestionnairePage({ params }: { params: Promise<{ id: st
   const [setupOpen, setSetupOpen] = useState(false);
   const [format, setFormat] = useState<"brief" | "short">("short");
   const [redoAnswered, setRedoAnswered] = useState(false);
+  const [copyWithQuestion, setCopyWithQuestion] = useState(false);
+  const [copyNotice, setCopyNotice] = useState<string | null>(null);
   const [columnPicks, setColumnPicks] = useState<Record<"questionCol" | "evidenceCol" | "responseCol" | "commentsCol", string>>({
     questionCol: "",
     evidenceCol: "",
@@ -423,6 +434,59 @@ export default function QuestionnairePage({ params }: { params: Promise<{ id: st
     }
   }
 
+  // The client's own question number if their file has one, else our position.
+  function questionNo(q: Question): string {
+    for (const v of Object.values(q.row_data ?? {})) {
+      const t = (v ?? "").trim();
+      if (/^\d+(\.\d+)*[a-z]?$/i.test(t)) return t;
+    }
+    return String(q.position + 1);
+  }
+
+  // Puts the client-file wording on the clipboard as a table that pastes into Word or Excel.
+  async function copyForWord(list: Question[]) {
+    const answered = list.filter((q) => q.answer_status === "ok");
+    if (answered.length === 0) {
+      setCopyNotice("No answered questions to copy");
+      setTimeout(() => setCopyNotice(null), 3000);
+      return;
+    }
+    const noResponseColumn = allowedAnswers === "none";
+    const rows: CopyRow[] = answered.map((q) => {
+      const response = clientResponse(q.response_value, noResponseColumn ? "yesno" : allowedAnswers);
+      return {
+        no: questionNo(q),
+        question: q.question_text,
+        response: noResponseColumn ? undefined : response,
+        remark: noResponseColumn ? remarkWithAnswer(response, q.answer_text) : (q.answer_text ?? ""),
+        evidence: q.citations.map((c) => c.filename).join("; "),
+      };
+    });
+    const { html, text } = buildCopy(rows, {
+      includeQuestion: copyWithQuestion,
+      includeResponse: !noResponseColumn,
+      includeEvidence: doc?.column_config?.includeEvidence !== false,
+    });
+    try {
+      await navigator.clipboard.write([
+        new ClipboardItem({
+          "text/html": new Blob([html], { type: "text/html" }),
+          "text/plain": new Blob([text], { type: "text/plain" }),
+        }),
+      ]);
+    } catch {
+      try {
+        await navigator.clipboard.writeText(text);
+      } catch {
+        setCopyNotice("Could not copy. Your browser blocked the clipboard.");
+        setTimeout(() => setCopyNotice(null), 4000);
+        return;
+      }
+    }
+    setCopyNotice(`Copied ${rows.length} ${rows.length === 1 ? "answer" : "answers"}. Paste into Word or Excel.`);
+    setTimeout(() => setCopyNotice(null), 4000);
+  }
+
   const hasColumns = !!doc?.column_headers && doc.column_headers.length > 0;
   const allowedAnswers = resolveAllowed(
     asAllowed(doc?.allowed_answers),
@@ -455,11 +519,22 @@ export default function QuestionnairePage({ params }: { params: Promise<{ id: st
     recheck: questions.filter((q) => q.answer_status === "ok" && (scoreOf(q) ?? 99) < 5).length,
   };
 
+  const repliesCount = questions.filter((q) => q.client_reply).length;
+  const followupCount = questions.filter(
+    (q) => q.reply_status === "different" || q.reply_status === "query" || q.reply_status === "unclear"
+  ).length;
+
   const STATUS_FILTERS: { value: StatusFilter; label: string; count: number }[] = [
     { value: "all", label: "All", count: questions.length },
     { value: "needs_review", label: "Needs review", count: needsReviewCount },
     { value: "pending", label: "Pending", count: pendingCount },
     { value: "answered", label: "Answered", count: answeredCount },
+    ...(repliesCount > 0
+      ? [
+          { value: "replies" as StatusFilter, label: "Client replies", count: repliesCount },
+          { value: "followup" as StatusFilter, label: "Follow-up", count: followupCount },
+        ]
+      : []),
     ...(doc?.client_id && hasComparison && comparisonCounts.same + comparisonCounts.reworded + comparisonCounts.changed > 0
       ? [{ value: "differs" as StatusFilter, label: "Different from last time", count: differsCount }]
       : []),
@@ -469,6 +544,10 @@ export default function QuestionnairePage({ params }: { params: Promise<{ id: st
     if (statusFilter === "needs_review") return q.answer_status === "ok" && !isReady(q);
     if (statusFilter === "pending") return q.answer_status !== "ok";
     if (statusFilter === "answered") return q.answer_status === "ok";
+    if (statusFilter === "replies") return !!q.client_reply;
+    if (statusFilter === "followup") {
+      return q.reply_status === "different" || q.reply_status === "query" || q.reply_status === "unclear";
+    }
     if (statusFilter === "differs") {
       return q.comparison_status === "reworded" || q.comparison_status === "changed" || q.comparison_status === "new";
     }
@@ -866,6 +945,36 @@ export default function QuestionnairePage({ params }: { params: Promise<{ id: st
                   {generatingRange ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
                   {generatingRange ? "Generating..." : "Generate range"}
                 </button>
+                <div className="flex w-full flex-wrap items-center gap-2 border-t border-border pt-3">
+                  <span className="text-sm text-muted">Copy the answers for the client&apos;s Word file:</span>
+                  <button
+                    onClick={() => {
+                      const from = Number(rangeFrom);
+                      const to = Number(rangeTo);
+                      copyForWord(questions.filter((q) => q.position + 1 >= from && q.position + 1 <= to));
+                    }}
+                    className="flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-surface-hover"
+                  >
+                    <ClipboardCopy size={14} />
+                    Copy range for Word
+                  </button>
+                  <button
+                    onClick={() => copyForWord(questions)}
+                    className="flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-surface-hover"
+                  >
+                    <ClipboardCopy size={14} />
+                    Copy all for Word
+                  </button>
+                  <label className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
+                    <input
+                      type="checkbox"
+                      checked={copyWithQuestion}
+                      onChange={(e) => setCopyWithQuestion(e.target.checked)}
+                      className="h-4 w-4 accent-[var(--color-accent)]"
+                    />
+                    Include the question text
+                  </label>
+                </div>
               </div>
             )}
 
@@ -1074,8 +1183,18 @@ export default function QuestionnairePage({ params }: { params: Promise<{ id: st
                                 <Check size={17} strokeWidth={2.4} />
                                 Answer for the client
                               </h3>
-                              <span className="rounded-full bg-success-soft px-2.5 py-0.5 text-xs font-semibold text-success">
-                                Goes into the client file
+                              <span className="flex items-center gap-2">
+                                <button
+                                  onClick={() => copyForWord([q])}
+                                  title="Copy this answer as a table to paste into Word or Excel"
+                                  className="flex items-center gap-1.5 rounded-full border border-success-border bg-surface px-2.5 py-0.5 text-xs font-semibold text-foreground transition-colors hover:bg-surface-hover"
+                                >
+                                  <ClipboardCopy size={11} />
+                                  Copy for Word
+                                </button>
+                                <span className="rounded-full bg-success-soft px-2.5 py-0.5 text-xs font-semibold text-success">
+                                  Goes into the client file
+                                </span>
                               </span>
                             </div>
 
@@ -1231,6 +1350,15 @@ export default function QuestionnairePage({ params }: { params: Promise<{ id: st
                             )}
                           </section>
                         </div>
+
+                        {me && (
+                          <ClientReply
+                            question={q}
+                            onUpdated={(updated) =>
+                              setQuestions((prev) => prev.map((x) => (x.id === q.id ? (updated as Question) : x)))
+                            }
+                          />
+                        )}
                       </div>
                     )}
 
@@ -1259,6 +1387,14 @@ export default function QuestionnairePage({ params }: { params: Promise<{ id: st
               })}
             </ul>
           </>
+        )}
+        {copyNotice && (
+          <div
+            role="status"
+            className="fixed bottom-6 right-6 z-30 rounded-xl bg-foreground px-4 py-2.5 text-sm font-medium text-surface shadow-lg"
+          >
+            {copyNotice}
+          </div>
         )}
       </main>
     </div>

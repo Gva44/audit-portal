@@ -184,3 +184,10 @@ alter table questions add column if not exists gap_note text;
 
 -- Internal: documents to add so the question could be answered in full.
 alter table questions add column if not exists documents_to_add jsonb;
+
+-- What the client wrote back about our answer, kept separate from the answer itself.
+alter table questions add column if not exists client_reply text;
+alter table questions add column if not exists reply_status text;
+alter table questions add column if not exists reply_note text;
+alter table questions add column if not exists reply_by text;
+alter table questions add column if not exists reply_at timestamptz;
